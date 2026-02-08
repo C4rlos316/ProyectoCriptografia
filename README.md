@@ -2,12 +2,15 @@
 
 ### Integrantes del equipo y roles
 
-| Integrante                              | Rol                                                                 |
-|----------------------------------------|---------------------------------------------------------------------|
-| Hernández Ramírez Miguel Angel          | Desarrollo, Revisor de código, Avances                              |
-| Hernández Gutiérrez Carlos Mario        | Desarrollo, Testing, Project Manager                                |
-| Solís Espinosa Andrea Vianney           | Desarrollo, Arquitectura, Diseño del sistema                        |
-| Durán Fernández Elizabeth               | Desarrollo, Documentación, Analista de riesgos                      |
+### Integrantes del equipo y roles
+
+| Integrante | Rol |
+|-----------|-----|
+| [Hernández Ramírez Miguel Angel](https://github.com/Miguel07FI) | Desarrollo, Revisor de código, Avances |
+| [Hernández Gutiérrez Carlos Mario](https://github.com/C4rlos316) | Desarrollo, Testing, Project Manager |
+| [Solís Espinosa Andrea Vianney](https://github.com/aviansol) | Desarrollo, Arquitectura, Diseño del sistema |
+| [Durán Fernández Elizabeth](https://github.com/FernandezED) | Desarrollo, Documentación, Analista de riesgos |
+
 
 ---
 
