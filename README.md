@@ -68,6 +68,81 @@ Los siguientes elementos **NO** forman parte del sistema:
 
 ---
 
+## 2. Diagrama de Arquitectura
+
+### Descripción del Flujo Operativo
+
+El diagrama de arquitectura ilustra el flujo operativo de la Bóveda Segura de Documentos Digitales, estableciendo una separación estricta entre los **componentes de confianza**, alojados en el lado del cliente, y los **componentes no confiables**, correspondientes a la red y al almacenamiento remoto.
+
+####  Proceso de Emisión (Cifrado)
+
+El proceso de emisión inicia cuando el usuario proporciona:
+- Su **contraseña**
+- El **archivo en texto claro**
+- La **selección del destinatario**
+
+**Flujo detallado:**
+
+1. **Desbloqueo del Key Store**
+   - La contraseña es procesada mediante una función de derivación de claves (**KDF**)
+   - Se desbloquea el Key Store local
+   - Se extrae de manera segura la clave privada del remitente en memoria temporal
+
+2. **Cifrado del Archivo**
+   - El sistema genera una clave simétrica aleatoria y única para el documento
+   - Se emplea un esquema de cifrado autenticado (**AEAD**) para transformar el archivo original
+   - Se garantiza tanto confidencialidad como integridad
+
+3. **Envolvimiento de Clave**
+   - La clave simétrica es "envuelta" mediante cifrado asimétrico
+   - Se utiliza la clave pública del receptor
+   - Solo el destinatario autorizado podrá acceder a la información
+
+4. **Firma Digital**
+   - El sistema calcula una firma digital utilizando la clave privada del remitente
+   - Se dota al paquete de evidencia criptográfica para el no repudio
+   - Se valida la autenticidad del emisor
+
+5. **Ensamblaje del Contenedor**
+   - Todos los elementos se consolidan en un contenedor único:
+     - Archivo cifrado
+     - Claves envueltas
+     - Metadatos
+     - Firma digital
+   - Se estructura dentro del entorno seguro del cliente
+
+####  Transmisión Segura
+
+Una vez ensamblado, el contenedor es transmitido a través de un canal de red seguro (mediante **TLS/SSL**) hacia el servidor backend. El entorno remoto (API y base de datos central) asume un **modelo de almacenamiento no confiable**. El servidor actúa exclusivamente como un repositorio inerte de los contenedores cifrados y del almacén de claves públicas, careciendo por completo de la capacidad para leer el contenido de los archivos o extraer las claves simétricas.
+
+####  Proceso de Recuperación (Descifrado)
+
+El modelo detalla el flujo de recuperación y verificación ejecutado por el destinatario:
+
+1. **Descarga del Contenedor**
+   - El destinatario descarga el contenedor desde el almacenamiento remoto
+
+2. **Verificación de Firma**
+   - La aplicación ejecuta una validación de la firma digital **ANTES** de cualquier manipulación
+   - ❌ Si la firma es inválida → proceso se detiene inmediatamente
+   - ✅ Si la firma es válida → continúa el proceso
+
+3. **Desenvolvimiento de Clave**
+   - El sistema desenvuelve la clave simétrica
+   - Utiliza la clave privada del receptor (desbloqueada previamente con su contraseña)
+
+4. **Descifrado del Archivo**
+   - Se emplea la clave simétrica recuperada para revertir el proceso AEAD
+   - Se descifra el archivo original
+   - Se entrega al usuario de forma íntegra dentro de su dispositivo local
+
+---
+
+###  Diagrama Visual
+![Arquitectura del sistema](diagrama.png)
+
+---
+
 ## 3. Requisitos de Seguridad
 
 Para los requisitos de seguridad se tienen las siguientes propiedades:
