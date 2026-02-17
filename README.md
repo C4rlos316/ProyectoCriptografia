@@ -96,6 +96,8 @@ Para los requisitos de seguridad se tienen las siguientes propiedades:
 ### RS-8: Confidencialidad de claves simétricas de archivo
 **Descripción:** Las claves simétricas utilizadas para cifrar archivos individuales no deben ser almacenadas en texto plano. Deben estar protegidas mediante envolvimiento con las claves públicas de los destinatarios.
 
+---
+
 ## 4. Modelo de Amenazas
 
 ### 4.1 Activos a Proteger
