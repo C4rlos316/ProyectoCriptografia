@@ -319,3 +319,116 @@ Se detalla una lista de los adversarios que tenemos que considerar:
 **Descripción:** La firma digital debe ser verificada **ANTES** de intentar descifrar cualquier contenido. Si la verificación falla, el proceso debe detenerse inmediatamente sin revelar información sobre el contenido.
 
 ---
+
+## 6. Revisión de Superficie de Ataque
+
+### 6.1 Entrada de Archivos
+
+**¿Qué hace el sistema?**  
+La aplicación lee archivos del disco del usuario para cifrarlos.
+
+**¿Qué puede salir mal?**
+- **Archivos demasiado grandes:** Un archivo de 50 GB podría consumir toda la memoria RAM y crashear la aplicación.
+- **Nombres de archivo maliciosos:** Un archivo llamado `../../etc/passwd` o con caracteres especiales raros podría causar problemas al procesar rutas o al guardar el contenedor cifrado.
+- **Archivos corruptos o malformados:** Aunque solo ciframos el contenido sin parsearlo, archivos con estructuras extrañas podrían revelar bugs en nuestro código.
+
+**¿Qué propiedad de seguridad está en riesgo?**  
+Principalmente la **disponibilidad del sistema**.
+
+---
+
+### 6.2 Parsing de Metadatos del Contenedor
+
+**¿Qué hace el sistema?**  
+Cuando desciframos un archivo, primero leemos el contenedor cifrado que incluye metadatos en cierto formato (destinatarios, claves envueltas, firma, etc.).
+
+**¿Qué puede salir mal?**
+- **JSON malformado:** Un contenedor con JSON inválido podría hacer que el parser falle y crashee la aplicación.
+- **Metadatos gigantes:** Un atacante podría crear un contenedor con un campo de 1 GB para causar agotamiento de memoria.
+- **Campos inesperados:** JSON con estructuras que no esperamos podría causar comportamiento indefinido si no validamos.
+
+**¿Qué propiedad de seguridad está en riesgo?**  
+La **integridad y disponibilidad** del sistema.
+
+---
+
+### 6.3 Importación y Exportación de Claves
+
+**¿Qué hace el sistema?**  
+Los usuarios pueden importar claves públicas de otras personas y exportar su propia clave pública.
+
+**¿Qué puede salir mal?**
+- Claves públicas inválidas
+- Sustitución de clave pública
+- Exportar clave privada por error
+
+**¿Qué propiedad de seguridad está en riesgo?**  
+**Confidencialidad** y **autenticidad**.
+
+---
+
+### 6.4 Manejo de Contraseñas
+
+**¿Qué puede salir mal?**
+- Contraseñas débiles
+- Contraseña visible en terminal
+- Contraseña en memoria por mucho tiempo
+
+**¿Qué propiedad de seguridad está en riesgo?**  
+**Confidencialidad de las claves privadas**.
+
+---
+
+### 6.5 Selección de Destinatarios al Compartir
+
+**¿Qué puede salir mal?**
+- Destinatario equivocado
+- Clave pública faltante
+- Confusión entre usuarios
+
+**¿Qué propiedad de seguridad está en riesgo?**  
+**Confidencialidad**.
+
+---
+
+### 6.6 Verificación de Firma Digital
+
+**¿Qué puede salir mal?**
+- Verificación omitida
+- Verificar después de descifrar
+- Clave pública incorrecta
+
+**¿Qué propiedad de seguridad está en riesgo?**  
+**Autenticidad del remitente**.
+
+---
+
+### 6.7 Interfaz de Línea de Comandos (CLI)
+
+**¿Qué puede salir mal?**
+- Inyección de comandos
+- Path traversal
+- Argumentos contradictorios
+
+**¿Qué propiedad de seguridad está en riesgo?**  
+**Integridad del sistema** y **confidencialidad**.
+
+---
+
+## 7. Restricciones de Diseño Derivadas de Requisitos
+
+| Requisito de Seguridad | Restricción de Diseño | Justificación |
+|------------------------|----------------------|---------------|
+| RS-1 Confidencialidad | Usar cifrado autenticado AEAD | Evita ataques de padding |
+| RS-2 Integridad | Usar AEAD | Detecta modificaciones |
+| RS-3 Autenticidad | Firmas digitales | Solo la clave privada genera firma válida |
+| RS-4 Claves privadas | Cifrar Key Store con KDF | Resiste fuerza bruta |
+| RS-5 Manipulación | Incluir metadatos en firma o AEAD | Detecta cambios |
+| RS-6 No repudio | Firmas del remitente | Evidencia criptográfica |
+| RS-7 Separación de claves | Nueva clave por archivo | Limita impacto |
+| RS-8 Claves simétricas | Cifrado híbrido | Solo destinatarios autorizados |
+| RS-9 Verificación previa | Verificar firma antes de descifrar | Defensa en profundidad |
+| Almacenamiento no confiable | No guardar datos sensibles en claro | Supone atacante con lectura |
+| Manejo de nonces | Nonce único por operación | Evita romper AEAD |
+| Múltiples destinatarios | Envolver clave por destinatario | Permite acceso independiente |
+| Backup y recuperación | Exportar Key Store cifrado | Evita pérdida permanente |
