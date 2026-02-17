@@ -67,3 +67,36 @@ Los siguientes elementos **NO** forman parte del sistema:
 | **Gestión de archivos digitales una vez cifrado** | Corresponde a sistemas de administración documental posteriores al cifrado, como organización, clasificación o eliminación. |
 
 ---
+
+## 3. Requisitos de Seguridad
+
+Para los requisitos de seguridad se tienen las siguientes propiedades:
+
+### RS-1: Confidencialidad del contenido del archivo
+**Descripción:** Un atacante que obtenga el contenedor cifrado no debe poder conocer el contenido del archivo sin poseer la clave privada correspondiente del destinatario autorizado.
+
+### RS-2: Integridad del contenido del archivo
+**Descripción:** Cualquier modificación al contenido cifrado del archivo debe ser detectada durante el proceso de descifrado, resultando en el rechazo del archivo.
+
+### RS-3: Autenticidad del remitente
+**Descripción:** Un destinatario debe poder verificar de manera criptográfica que el archivo fue creado y firmado por el remitente declarado y no por un impostor.
+
+### RS-4: Confidencialidad de las claves privadas
+**Descripción:** Las claves privadas almacenadas en el sistema deben estar protegidas mediante derivación de clave basada en contraseña (KDF). Un atacante con acceso al Key Store no debe poder extraer las claves privadas sin conocer la contraseña del usuario.
+
+### RS-5: Protección contra manipulación
+**Descripción:** Cualquier alteración de los metadatos del contenedor cifrado (incluyendo las claves envueltas, la firma digital o los identificadores de destinatarios) debe ser detectable e invalidar el archivo completo.
+
+### RS-6: No repudio
+**Descripción:** El remitente no debe poder negar haber creado y firmado un documento, ya que la firma digital proporciona evidencia criptográfica de autoría.
+
+### RS-7: Separación de claves por archivo
+**Descripción:** Cada archivo debe ser cifrado con una clave simétrica única e independiente. El compromiso de una clave de archivo no debe comprometer otros archivos.
+
+### RS-8: Confidencialidad de claves simétricas de archivo
+**Descripción:** Las claves simétricas utilizadas para cifrar archivos individuales no deben ser almacenadas en texto plano. Deben estar protegidas mediante envolvimiento con las claves públicas de los destinatarios.
+
+### RS-9: Verificación antes del descifrado
+**Descripción:** La firma digital debe ser verificada **ANTES** de intentar descifrar cualquier contenido. Si la verificación falla, el proceso debe detenerse inmediatamente sin revelar información sobre el contenido.
+
+---
