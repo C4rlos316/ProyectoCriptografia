@@ -96,6 +96,148 @@ Para los requisitos de seguridad se tienen las siguientes propiedades:
 ### RS-8: Confidencialidad de claves simétricas de archivo
 **Descripción:** Las claves simétricas utilizadas para cifrar archivos individuales no deben ser almacenadas en texto plano. Deben estar protegidas mediante envolvimiento con las claves públicas de los destinatarios.
 
+## 4. Modelo de Amenazas
+
+### 4.1 Activos a Proteger
+
+| Activo | Criticidad | Descripción |
+|--------|-----------|-------------|
+| **Contenido de archivos** |  Alta | El contenido original de los documentos que se comparten |
+| **Claves privadas de usuarios** |  **Crítica** | Las claves que permiten descifrar archivos y firmar documentos |
+| **Claves simétricas de archivos** |  Alta | Claves únicas generadas para cifrar cada archivo |
+| **Contraseñas de usuarios** |  **Crítica** | Credenciales utilizadas para claves de protección del Key Store |
+| **Validez de firmas digitales** |  Alta | La confianza en que un documento proviene del remitente declarado |
+| **Metadatos de archivos** |  Media | Información como nombre de archivo, tamaño, fecha, destinatarios |
+| **Integridad del contenedor** |  Alta | La estructura completa que contiene archivo cifrado + claves + firma |
+
+---
+
+### 4.2 Adversarios
+
+Se detalla una lista de los adversarios que tenemos que considerar:
+
+####  Adversario A1: Atacante Externo con Acceso a Almacenamiento
+
+**Objetivo:** Descifrar el contenido de los archivos o extraer información sensible de los metadatos.
+
+**Capacidades:**
+- ✅ Puede leer todos los contenedores cifrados almacenados
+- ✅ Puede copiar archivos del sistema de almacenamiento
+- ❌ NO tiene acceso a las claves privadas de los usuarios
+- ❌ NO conoce las contraseñas de los usuarios
+- ❌ NO tiene acceso a la memoria de la aplicación en ejecución
+
+---
+
+####  Adversario A2: Destinatario Malicioso
+
+**Objetivo:** Manipular archivos para que parezcan venir de otro remitente, o modificar contenido sin detección.
+
+**Capacidades:**
+- ✅ Tiene acceso legítimo a su propia clave privada
+- ✅ Puede descifrar archivos que le fueron compartidos
+- ✅ Puede intentar modificar archivos o metadatos
+- ✅ Puede intentar suplantar al remitente original
+- ❌ NO tiene acceso a las claves privadas de otros usuarios
+
+---
+
+####  Adversario A3: Atacante Man-in-the-Middle
+
+**Objetivo:** Causar que el destinatario acepte un archivo modificado como válido.
+
+**Capacidades:**
+- ✅ Puede interceptar y modificar contenedores antes de que lleguen al destinatario
+- ✅ Puede alterar bytes del archivo cifrado
+- ✅ Puede modificar metadatos, claves envueltas o firmas
+- ❌ NO puede generar firmas válidas sin la clave privada del remitente
+
+---
+
+####  Adversario A4: Atacante con Acceso Temporal al Dispositivo
+
+**Objetivo:** Extraer claves privadas para uso futuro.
+
+**Capacidades:**
+- ✅ Tiene acceso físico breve al dispositivo del usuario (por ejemplo, dispositivo desbloqueado y desatendido)
+- ✅ Puede copiar el Key Store cifrado
+- ✅ Puede intentar extraer claves de la memoria
+- ❌ NO conoce la contraseña del usuario
+- ❌ NO tiene acceso prolongado para realizar ataques sofisticados
+
+---
+
+####  Adversario A5: Atacante con Capacidad de Fuerza Bruta
+
+**Objetivo:** Descifrar el Key Store mediante adivinación de contraseña.
+
+**Capacidades:**
+- ✅ Tiene recursos computacionales significativos
+- ✅ Puede realizar ataques de diccionario contra contraseñas
+- ✅ Puede intentar ataques de fuerza bruta offline contra el Key Store
+- ❌ NO puede comprometer los algoritmos criptográficos fundamentales (AES, RSA, etc.)
+
+---
+
+## 5. Supuestos de Confianza
+
+>  El sistema asume que las siguientes condiciones son verdaderas. **Si alguno de estos supuestos es violado, las garantías de seguridad pueden no mantenerse.**
+
+### 1️ Protección de Contraseñas por el Usuario
+
+**Supuesto:** Los usuarios eligen contraseñas suficientemente fuertes y las mantienen secretas. No comparten sus contraseñas ni las almacenan de manera insegura.
+
+**Impacto si se viola:** Un atacante con la contraseña puede descifrar el Key Store y obtener todas las claves privadas del usuario.
+
+---
+
+### 2️ Autenticidad de Claves Públicas
+
+**Supuesto:** Las claves públicas de los destinatarios son auténticas y han sido obtenidas mediante un canal confiable. Los usuarios verifican las claves públicas antes de compartir archivos sensibles.
+
+**Impacto si se viola:** Un atacante podría suplantar a un destinatario y descifrar archivos destinados a ese usuario.
+
+---
+
+### 3️ Integridad de la Aplicación Vault
+
+**Supuesto:** El binario de la aplicación Vault no ha sido modificado por un atacante. Los usuarios obtienen la aplicación de fuentes confiables.
+
+**Impacto si se viola:** Un atacante podría modificar la aplicación para filtrar claves, contraseñas o contenido de archivos.
+
+---
+
+### 4️ Almacenamiento No Confiable
+
+**Supuesto:** Todo almacenamiento persistente (sistema de archivos local, almacenamiento externo) es considerado no confiable. Los atacantes pueden tener acceso de lectura a estos almacenamientos.
+
+**Consecuencia de diseño:** Por esto, todos los datos sensibles se cifran antes del almacenamiento.
+
+---
+
+### 5️ Memoria Segura Durante Ejecución
+
+**Supuesto:** Mientras la aplicación está en ejecución, la memoria del proceso está protegida por el sistema operativo contra acceso no autorizado de otros procesos.
+
+**Impacto si se viola:** Un atacante con acceso a la memoria del proceso podría extraer claves o contraseñas en texto plano.
+
+---
+
+### 6️ Disponibilidad de Claves Privadas para Recuperación
+
+**Supuesto:** Los usuarios son responsables de hacer respaldo de su Key Store cifrado. El sistema no proporciona recuperación de claves si se pierde el Key Store o la contraseña.
+
+**Consecuencia:** La pérdida de la contraseña o del Key Store resulta en pérdida permanente de acceso a todos los archivos cifrados.
+
+---
+
+### 7️ Uso Apropiado del Sistema
+
+**Supuesto:** Los usuarios utilizan el sistema según lo diseñado y siguen las mejores prácticas (por ejemplo, no compartir archivos con destinatarios no confiables, verificar firmas antes de confiar en el contenido).
+
+**Impacto si se viola:** Errores del usuario pueden resultar en exposición de información o aceptación de contenido malicioso.
+
+
 ### RS-9: Verificación antes del descifrado
 **Descripción:** La firma digital debe ser verificada **ANTES** de intentar descifrar cualquier contenido. Si la verificación falla, el proceso debe detenerse inmediatamente sin revelar información sobre el contenido.
 
