@@ -1,0 +1,50 @@
+.venv 
+.pytest_cache
+*.pyc
+
+
+# ─────────────────────────
+# Python cache
+# ─────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+
+# pytest
+.pytest_cache/
+
+# entorno virtual
+.venv/
+venv/
+env/
+
+# archivos compilados
+*.so
+*.pyd
+*.dll
+
+# archivos temporales
+*.log
+*.tmp
+
+# archivos del sistema
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# contenedores vault generados
+*.vault
+
+# coverage / testing
+.coverage
+htmlcov/
+coverage.xml
+
+# python build
+build/
+dist/
+*.egg-info/
+
