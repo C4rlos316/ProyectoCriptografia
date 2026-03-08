@@ -15,7 +15,6 @@ Se implementa la Interfaz de Línea de Comandos (CLI) para interactuar con el mo
 
 # Descripción del Cambio / Funcionalidad
 - **CLI (`main.py`):** Creación del punto de entrada interactivo con comandos `cifrar` y `descifrar` usando `argparse`.
-- **Seguridad del Repositorio:** Creación de un `.gitignore` estricto para evitar la subida accidental de llaves, contenedores `.vault`, entornos virtuales y caché.
 - **Documentación Técnica (`docs/encryption_design.md`):** Redacción exhaustiva del diseño criptográfico, justificando el uso de AES-GCM-256, el manejo del nonce y las defensas contra los adversarios A1 y A3.
 - **Manual de Usuario (`docs/manualDeUsuario.md`):** Guía de instalación y uso del CLI con ejemplos de ejecución.
 - **Estandarización:** Se agregó la plantilla de Pull Requests en `.github/pull_request_template.md`.
