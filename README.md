@@ -11,6 +11,78 @@
 | [Rivera Lopez David Zaid](https://github.com/AvalonRD) | Desarrollo, Documentación, Analista de riesgos |
 | [Suárez Román Clara Alin](https://github.com/clarasrzfi) | Desarrollo, Documentación técnica, Validación de seguridad |
 
+---
+
+## Inicio Rápido
+
+### Prerrequisitos
+
+- Python 3.10+
+- pip
+
+### Instalación
+
+```bash
+# Clonar el repositorio
+git clone https://github.com/C4rlos316/ProyectoCriptografia.git
+cd ProyectoCriptografia
+
+# Crear y activar entorno virtual
+python -m venv .venv
+.\.venv\Scripts\activate        # Windows
+# source .venv/bin/activate     # Linux/macOS
+
+# Instalar dependencias
+pip install -r requirements.txt
+```
+
+### Uso (CLI)
+
+```bash
+# Cifrar un archivo
+python main.py cifrar archivo.txt archivo.vault
+
+# Descifrar (usar la llave hex que se imprimió al cifrar)
+python main.py descifrar archivo.vault archivo_recuperado.txt <LLAVE_HEX>
+```
+
+### Ejecutar pruebas
+
+```bash
+pytest tests/test_encryption.py -v
+```
+
+---
+
+## Estructura del Proyecto
+
+```
+ProyectoCriptografia/
+├── vault/                      # Módulo principal
+│   └── crypto/
+│       ├── __init__.py
+│       └── encryption.py       # AES-GCM-256: cifrado y descifrado
+├── tests/
+│   ├── test_encryption.py      # Tests unitarios
+│
+├── docs/
+│   └── encryption_design.md    # Diseño criptográfico detallado
+├── main.py                     # Interfaz de línea de comandos (CLI)
+├── requirements.txt            # Dependencias: cryptography, pytest
+├── pytest.ini                  # Configuración de pytest
+├── diagrama.png                # Diagrama de arquitectura
+└── README.md
+```
+
+---
+
+## Documentación Técnica
+
+| Documento | Descripción |
+|-----------|-------------|
+| [Diseño de Cifrado — D2: Cifrado Autenticado de Archivos](docs/encryption_design.md) | Diseño completo del módulo criptográfico: algoritmo AES-GCM-256, estrategia de nonce, datos autenticados asociados (AAD), formato del contenedor `.vault`, flujo de cifrado/descifrado, pruebas implementadas, decisiones de seguridad y manual de uso CLI |
+
+---
 
 ## Arquitectura y modelo de amenazas
 

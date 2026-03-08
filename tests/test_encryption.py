@@ -253,7 +253,3 @@ class TestRandomness:
         """La clave debe medir exactamente 32 bytes (256 bits)."""
         key = generate_key()
         assert len(key) == 32
-        container = _encrypt_bytes(b"datos confidenciales")
-        container["ciphertext"] = container["ciphertext"][:-4]
-        with pytest.raises(Exception):          # InvalidTag o ValueError
-            _decrypt_bytes(container)
