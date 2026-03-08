@@ -199,3 +199,258 @@ Cuando AES-GCM detecta manipulación:
    lo que evita dar pistas al atacante.
 
 ---
+## 7. Aleatoriedad segura
+
+
+### Fuentes de aleatoriedad utilizadas
+
+
+| Operación | Función | Fuente subyacente |
+|-----------|---------|-------------------|
+| Generación de clave (256 bits) | `AESGCM.generate_key(bit_length=256)` | `os.urandom()` → CSPRNG del OS |
+| Generación de nonce (96 bits) | `os.urandom(12)` | CSPRNG del OS directamente |
+
+
+### ¿Qué es un CSPRNG?
+
+
+Un **CSPRNG** (Cryptographically Secure Pseudo-Random Number Generator) es un generador de
+números aleatorios que cumple con propiedades de seguridad criptográfica:
+
+
+- **Impredecible:** Conocer valores anteriores no permite predecir valores futuros.
+- **Resistente a ataques de estado:** Incluso si un atacante obtiene el estado interno del
+  generador, no puede reconstruir valores pasados.
+
+
+`os.urandom()` en Python delega al sistema operativo:
+- **Windows:** `BCryptGenRandom` (antes `CryptGenRandom`)
+- **Linux:** `getrandom()` / `/dev/urandom`
+- **macOS:** `getentropy()`
+
+
+### Lo que NO hacemos (y por qué)
+
+
+| Mala práctica | Riesgo | Nuestra decisión |
+|---------------|--------|------------------|
+| Usar `random.random()` | Es un PRNG predecible (Mersenne Twister), no criptográfico. Un atacante puede predecir la secuencia. | Usamos `os.urandom()` exclusivamente |
+| Sembrar manualmente (`random.seed(42)`) | Produce la misma secuencia cada vez. Todas las claves y nonces serían predecibles. | Nunca sembramos; dejamos que el OS provea entropía |
+| Usar el timestamp como semilla | Solo hay ~1 segundo de resolución; un atacante puede adivinar el valor. | El timestamp solo aparece en los metadatos, nunca como fuente de aleatoriedad |
+
+
+---
+
+
+## 8. Formato del contenedor `.vault`
+
+
+Cada operación de cifrado produce un archivo `.vault` que contiene todo lo necesario para
+descifrar el archivo (excepto la clave, que se gestiona por separado).
+
+
+### Estructura
+
+
+```
+vault_container (.vault)
+ ├── header        → metadatos autenticados (AAD), legibles
+ ├── nonce         → valor único para este cifrado (hex)
+ └── ciphertext    → contenido cifrado + auth_tag de 16 bytes (hex)
+```
+
+
+### Ejemplo real de un archivo `.vault`
+
+
+```json
+{
+  "header": {
+    "algorithm": "AES-GCM-256",
+    "filename": "documento.txt",
+    "timestamp": 1709836800,
+    "version": "1.0"
+  },
+  "nonce": "a1b2c3d4e5f6a1b2c3d4e5f6",
+  "ciphertext": "7f3a9c...e8b201"
+}
+```
+
+
+| Campo | Formato | Tamaño | Descripción |
+|-------|---------|--------|-------------|
+| `header` | Objeto JSON | Variable | Metadatos del archivo. Se reconstruye como AAD al descifrar. |
+| `nonce` | Hex string | 24 caracteres (12 bytes) | Nonce único usado en el cifrado. |
+| `ciphertext` | Hex string | `(len(plaintext) + 16) * 2` chars | Contenido cifrado concatenado con el auth tag de 16 bytes. |
+
+
+### ¿Por qué JSON y no binario?
+
+
+- **Legibilidad:** Permite inspeccionar los metadatos sin herramientas especiales.
+- **Portabilidad:** JSON es universal y se puede parsear en cualquier lenguaje.
+- **Depuración:** Facilita el desarrollo y las pruebas durante esta etapa.
+- **El ciphertext sigue siendo opaco:** Aunque el formato es JSON, los datos cifrados se
+  almacenan como hex strings y son ilegibles sin la clave.
+
+
+---
+
+
+## 9. Flujo de cifrado y descifrado
+
+
+### Cifrado (`encrypt_file`)
+
+
+```
+Archivo original
+       │
+       ▼
+  1. Leer contenido (bytes)
+       │
+       ▼
+  2. Generar clave AES-256    ← AESGCM.generate_key(256)  [CSPRNG]
+  3. Generar nonce 96 bits     ← os.urandom(12)            [CSPRNG]
+  4. Construir AAD             ← build_aad(filename)        [JSON determinista]
+       │
+       ▼
+  5. aesgcm.encrypt(nonce, plaintext, aad)
+       │
+       ▼
+  6. ciphertext || auth_tag   (el tag va al final, 16 bytes)
+       │
+       ▼
+  7. Guardar contenedor .vault (JSON con header, nonce, ciphertext)
+       │
+       ▼
+  8. Retornar la clave al usuario
+```
+
+
+### Descifrado (`decrypt_file`)
+
+
+```
+Archivo .vault + clave
+       │
+       ▼
+  1. Leer contenedor JSON
+       │
+       ▼
+  2. Reconstruir AAD desde header  ← json.dumps(header, sort_keys=True)
+  3. Extraer nonce (hex → bytes)
+  4. Extraer ciphertext (hex → bytes)
+       │
+       ▼
+  5. aesgcm.decrypt(nonce, ciphertext, aad)
+       │
+       ├── OK → plaintext original → escribir archivo de salida
+       │
+       └── FALLO → InvalidTag → NO se escribe nada, retorna False
+```
+
+
+---
+
+
+## 10. Pruebas implementadas
+
+
+Se implementaron **20 tests** organizados en 5 clases que cubren todos los requisitos de D2:
+
+
+| # | Clase | Tests | Qué valida |
+|---|-------|-------|------------|
+| 1 | `TestRoundtrip` | 4 | Cifrar y descifrar produce un archivo idéntico (texto, vacío, 1 MB, binario) |
+| 2 | `TestWrongKey` | 3 | La clave incorrecta falla (clave diferente, ceros, 1 bit cambiado) |
+| 3 | `TestCiphertextTamper` | 4 | Ciphertext modificado es detectado (primer byte, medio, tag, truncado) |
+| 4 | `TestMetadataTamper` | 4 | Metadata modificada es detectada (filename, algorithm, AAD completo, AAD vacío) |
+| 5 | `TestRandomness` | 5 | Cifrados múltiples producen diferentes ciphertexts, nonces y claves |
+
+
+Ejecutar con: `pytest tests/test_encryption.py -v`
+
+
+---
+
+
+## 11. Decisiones de seguridad
+
+
+### ¿Por qué AEAD en lugar de cifrado + hash separados?
+
+
+| Aspecto | Cifrado + Hash manual | AEAD (AES-GCM) |
+|---------|----------------------|-----------------|
+| **Operaciones** | Dos separadas: cifrar con AES-CBC/CTR + calcular HMAC-SHA256 | Una sola llamada: `aesgcm.encrypt()` |
+| **Riesgo de error** | Alto. El orden importa: Encrypt-then-MAC es seguro, pero MAC-then-Encrypt es vulnerable a padding oracles. Un error de implementación rompe todo. | Bajo. El algoritmo integra ambas operaciones internamente de forma inseparable. |
+| **Claves necesarias** | Dos: una para cifrar, otra para el MAC. Si se reutiliza la misma clave para ambas, se debilita la seguridad. | Una sola clave para todo. |
+| **Metadatos** | Hay que decidir explícitamente qué incluir en el MAC y cómo. Si se olvida incluir un campo, queda desprotegido. | El parámetro AAD protege automáticamente cualquier dato asociado que se pase. |
+| **Estándar** | No hay un estándar único; cada implementación puede hacerlo diferente. | NIST SP 800-38D define exactamente cómo funciona AES-GCM. |
+
+
+**Conclusión:** AEAD elimina una categoría completa de errores de implementación y ofrece
+las mismas garantías de seguridad en un solo primitivo estandarizado.
+
+
+### ¿Qué pasa si el nonce se repite?
+
+
+(Ver sección 4 — Estrategia de nonce)
+
+
+En resumen: la reutilización de nonce en AES-GCM es **catastrófica** porque:
+- Rompe la confidencialidad (XOR de plaintexts queda expuesto).
+- Rompe la autenticación (el atacante puede forjar tags válidos).
+- **Nuestra mitigación:** nonce aleatorio de 96 bits por cifrado + clave única por archivo.
+
+
+### ¿Contra qué atacante nos defendemos?
+
+
+**Atacante A1 — Externo con acceso al almacenamiento:**
+
+
+Este es el adversario principal en D2. Tiene las siguientes capacidades:
+- Puede leer todos los archivos `.vault` almacenados en disco.
+- Puede copiar, analizar y comparar contenedores cifrados.
+- **No** tiene acceso a la clave simétrica ni a la memoria de la aplicación.
+
+
+Nuestras defensas:
+- **AES-256** hace que descifrar por fuerza bruta sea computacionalmente infactible
+  (2^256 posibles claves; incluso con todos los computadores del mundo trabajando en
+  paralelo, tomaría más tiempo que la edad del universo).
+- **El auth tag** impide que modifique el ciphertext o los metadatos sin ser detectado.
+- **Clave única por archivo** limita el impacto: comprometer una clave no afecta a otros archivos.
+
+
+**Atacante A3 — Man-in-the-Middle:**
+
+
+Puede interceptar y modificar el contenedor antes de que llegue al destinatario.
+- Cualquier modificación al ciphertext, nonce o metadata causa `InvalidTag` al descifrar.
+- No puede generar un contenedor válido sin poseer la clave simétrica.
+- No puede modificar selectivamente los metadatos porque están protegidos por el AAD.
+## 12. Manual de Uso y CLI (Command Line Interface)
+
+
+Para facilitar la evaluación y uso del módulo criptográfico, se implementó una Interfaz de Línea de Comandos (CLI) interactiva. Esta herramienta abstrae la complejidad criptográfica y permite ejecutar el flujo de la Bóveda Segura directamente desde la terminal.
+
+
+### 12.1. Configuración del Entorno (Prerrequisitos)
+
+
+Para garantizar la reproducibilidad y evitar conflictos con dependencias del sistema operativo, el proyecto debe ejecutarse dentro de un entorno virtual de Python.
+
+
+**Paso 1: Crear y activar el entorno virtual**
+# Crear el entorno (ejecutar en la raíz del proyecto)
+python -m venv .venv
+
+
+# Activar el entorno en linea de comandos (en caso de que no aparezca ())
+.\.venv\Scripts\activate
+
+
