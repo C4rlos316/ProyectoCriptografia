@@ -167,6 +167,92 @@ class TestCiphertextTamper:
 
     def test_ciphertext_truncado(self):
         """Ciphertext al que le faltan bytes debe ser rechazado."""
+       container = _encrypt_bytes(b"datos confidenciales")
+        container["ciphertext"] = container["ciphertext"][:-4]
+        with pytest.raises(Exception):          # InvalidTag o ValueError
+            _decrypt_bytes(container)
+
+
+# ════════════════════════════════════════════════════════════
+# TEST 4 — Metadata (AAD) modificada debe ser detectada
+# ════════════════════════════════════════════════════════════
+
+class TestMetadataTamper:
+
+    def test_cambiar_filename_en_aad(self):
+        """
+        Cambiar el nombre del archivo en el AAD debe ser detectado.
+        Aunque el ciphertext no cambió, el AAD ya no coincide con el tag.
+        """
+        container = _encrypt_bytes(b"documento legal", "contrato.pdf")
+        # Simular que alguien modifica el nombre en los metadatos
+        container["aad"] = container["aad"].replace(
+            b"contrato.pdf", b"contrato_falso.pdf"
+        )
+        with pytest.raises(InvalidTag):
+            _decrypt_bytes(container)
+
+    def test_cambiar_algoritmo_en_aad(self):
+        """Cambiar el campo algorithm en AAD debe ser detectado."""
+        container = _encrypt_bytes(b"documento legal")
+        container["aad"] = container["aad"].replace(
+            b"AES-GCM-256", b"AES-CBC-256"
+        )
+        with pytest.raises(InvalidTag):
+            _decrypt_bytes(container)
+
+    def test_aad_completamente_diferente(self):
+        """Reemplazar el AAD completo por otro debe ser detectado."""
+        container = _encrypt_bytes(b"documento legal")
+        container["aad"] = build_aad("archivo_distinto.txt")
+        with pytest.raises(InvalidTag):
+            _decrypt_bytes(container)
+
+    def test_aad_vacio_cuando_no_lo_era(self):
+        """Usar AAD vacío cuando el original no lo era debe fallar."""
+        container = _encrypt_bytes(b"documento legal")
+        container["aad"] = b""
+        with pytest.raises(InvalidTag):
+            _decrypt_bytes(container)
+
+
+# ════════════════════════════════════════════════════════════
+# TEST 5 — Múltiples cifrados producen ciphertexts distintos
+# ════════════════════════════════════════════════════════════
+
+class TestRandomness:
+
+    def test_mismo_plaintext_produce_ciphertexts_distintos(self):
+        """
+        Cifrar el mismo contenido dos veces debe producir ciphertexts distintos.
+        Esto valida que el nonce es aleatorio en cada operación.
+        """
+        plaintext = b"contenido identico"
+        c1 = _encrypt_bytes(plaintext)
+        c2 = _encrypt_bytes(plaintext)
+        assert c1["ciphertext"] != c2["ciphertext"]
+
+    def test_nonces_distintos_por_operacion(self):
+        """Cada cifrado debe generar un nonce diferente."""
+        c1 = _encrypt_bytes(b"abc")
+        c2 = _encrypt_bytes(b"abc")
+        assert c1["nonce"] != c2["nonce"]
+
+    def test_claves_distintas_por_archivo(self):
+        """Cada cifrado debe generar una clave diferente (una por archivo)."""
+        c1 = _encrypt_bytes(b"abc")
+        c2 = _encrypt_bytes(b"abc")
+        assert c1["key"] != c2["key"]
+
+    def test_nonce_es_96_bits(self):
+        """El nonce debe medir exactamente 12 bytes (96 bits)."""
+        nonce = generate_nonce()
+        assert len(nonce) == 12
+
+    def test_clave_es_256_bits(self):
+        """La clave debe medir exactamente 32 bytes (256 bits)."""
+        key = generate_key()
+        assert len(key) == 32
         container = _encrypt_bytes(b"datos confidenciales")
         container["ciphertext"] = container["ciphertext"][:-4]
         with pytest.raises(Exception):          # InvalidTag o ValueError
