@@ -26,7 +26,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 # ── importar desde el módulo ────────────────────────────────
-from encryption import generate_key, generate_nonce, build_aad, encrypt_file, decrypt_file
+from vault.crypto.encryption import generate_key, generate_nonce, build_aad, encrypt_file, decrypt_file
 
 
 # ════════════════════════════════════════════════════════════
@@ -167,7 +167,7 @@ class TestCiphertextTamper:
 
     def test_ciphertext_truncado(self):
         """Ciphertext al que le faltan bytes debe ser rechazado."""
-       container = _encrypt_bytes(b"datos confidenciales")
+        container = _encrypt_bytes(b"datos confidenciales")
         container["ciphertext"] = container["ciphertext"][:-4]
         with pytest.raises(Exception):          # InvalidTag o ValueError
             _decrypt_bytes(container)
