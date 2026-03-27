@@ -39,11 +39,20 @@ pip install -r requirements.txt
 ### Uso (CLI)
 
 ```bash
-# Cifrar un archivo
-python main.py cifrar archivo.txt archivo.vault
+# Genera alice_private.pem y alice_public.pem
+python main.py identidad alice
 
-# Descifrar (usar la llave hex que se imprimió al cifrar)
-python main.py descifrar archivo.vault archivo_recuperado.txt <LLAVE_HEX>
+# Genera bob_private.pem y bob_public.pem
+python main.py identidad bob
+
+# Cifra 'archivo.txt' para que tanto Alice como Bob puedan abrirlo
+python main.py cifrar archivo.txt archivo.vault --publicas alice_public.pem bob_public.pem
+
+#Si eres alice
+python main.py descifrar archivo.vault recuperado_alice.txt --privada alice_private.pem
+
+#Si eres bob
+python main.py descifrar archivo.vault recuperado_bob.txt --privada bob_private.pem
 ```
 
 ### Ejecutar pruebas
