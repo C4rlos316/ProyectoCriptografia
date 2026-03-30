@@ -58,7 +58,7 @@ python main.py descifrar archivo.vault recuperado_bob.txt --privada bob_private.
 ### Ejecutar pruebas
 
 ```bash
-pytest tests/test_encryption.py -v
+python -m pytest tests/test_encryption.py -v
 ```
 
 ---
