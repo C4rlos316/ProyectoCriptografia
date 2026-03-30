@@ -1,53 +1,45 @@
-"""
-EXPECTATIVAS PARA PRUEBAS UNITARIAS
-
-Para cumplir con los Requisitos de Seguridad (RS), este módulo debe validar:
-
-1. ROUNDTRIP (RS-1): Cifrar un archivo y luego descifrarlo con la llave correcta 
-   debe devolver el contenido original exacto.
-   
-2. INTEGRIDAD (RS-2): Si se modifica aunque sea UN BYTE del archivo .vault, 
-   el descifrado DEBE fallar (lanzar InvalidTag).
-   
-3. LLAVE INCORRECTA (RS-1): Intentar descifrar con una llave hexadecimal distinta 
-   debe ser rechazado inmediatamente.
-   
-4. NO REPETICIÓN (RS-7): Cifrar el mismo archivo dos veces seguidas debe generar 
-   contenedores .vault distintos (uso correcto de nonce/IV).
-
-Nota: Los tests deben crear sus propios archivos temporales de prueba y 
-limpiarlos al finalizar (usar fixtures de pytest).
-
-"""
 import os
 import json
 import pytest
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-# ── importar desde el módulo ────────────────────────────────
-from vault.crypto.encryption import generate_key, generate_nonce, build_aad, encrypt_file, decrypt_file
+from cryptography.hazmat.primitives.asymmetric import rsa
+from vault.crypto.encryption import encrypt_file_hybrid, decrypt_file_hybrid
+from cryptography.hazmat.primitives import serialization
 
 
 # ════════════════════════════════════════════════════════════
-# HELPERS — simulan archivos en memoria sin tocar el disco
+# HELPERS — funciones auxiliares para los tests
 # ════════════════════════════════════════════════════════════
+
+def _generate_key() -> bytes:
+    """Genera una clave AES-256 (32 bytes)."""
+    return AESGCM.generate_key(bit_length=256)
+
+
+def _generate_nonce() -> bytes:
+    """Genera un nonce de 96 bits (12 bytes)."""
+    return os.urandom(12)
+
+
+def _build_aad(filename: str) -> bytes:
+    """Construye un AAD simple para los tests de D2."""
+    import time
+    metadata = {
+        "algorithm": "AES-GCM-256",
+        "filename": filename,
+        "timestamp": int(time.time()),
+        "version": "1.0",
+    }
+    return json.dumps(metadata, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
 
 def _encrypt_bytes(plaintext: bytes, filename: str = "test.txt") -> dict:
-    """
-    Versión en memoria de encrypt_file().
-    Recibe bytes directamente en lugar de leer un archivo del disco.
-    Retorna el contenedor como dict (no escribe .vault).
-
-    Así simulamos cualquier archivo:
-        _encrypt_bytes(b"hola")                  → archivo de texto
-        _encrypt_bytes(b"A" * 1_000_000)         → archivo de 1 MB
-        _encrypt_bytes(b"%PDF-1.4 ...")          → simula un PDF
-        _encrypt_bytes(b"")                      → archivo vacío
-    """
-    key   = generate_key()
-    nonce = generate_nonce()
-    aad   = build_aad(filename)
+    """Cifra bytes en memoria y retorna el contenedor como dict."""
+    key   = _generate_key()
+    nonce = _generate_nonce()
+    aad   = _build_aad(filename)
 
     aesgcm     = AESGCM(key)
     ciphertext = aesgcm.encrypt(nonce, plaintext, aad)
@@ -61,16 +53,41 @@ def _encrypt_bytes(plaintext: bytes, filename: str = "test.txt") -> dict:
 
 
 def _decrypt_bytes(container: dict) -> bytes:
-    """
-    Versión en memoria de decrypt_file().
-    Lanza InvalidTag si hay manipulación.
-    """
+    """Descifra un contenedor en memoria. Lanza InvalidTag si hay manipulacion."""
     aesgcm = AESGCM(container["key"])
     return aesgcm.decrypt(container["nonce"], container["ciphertext"], container["aad"])
 
+def _generate_rsa_pair(tmp_dir, username):
+    """
+    Genera un par de llaves RSA y las guarda como archivos .pem
+    en el directorio temporal. Retorna (ruta_publica, ruta_privada).
+    """
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048
+    )
+
+    priv_path = os.path.join(tmp_dir, f"{username}_private.pem")
+    pub_path = os.path.join(tmp_dir, f"{username}_public.pem")
+
+    with open(priv_path, "wb") as f:
+        f.write(private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+
+    with open(pub_path, "wb") as f:
+        f.write(private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ))
+
+    return pub_path, priv_path
+
 
 # ════════════════════════════════════════════════════════════
-# TEST 1 — Roundtrip: encrypt → decrypt = archivo idéntico
+# TEST 1 — encrypt → decrypt = archivo idéntico
 # ════════════════════════════════════════════════════════════
 
 class TestRoundtrip:
@@ -108,7 +125,7 @@ class TestWrongKey:
     def test_clave_diferente_falla(self):
         """Una clave distinta a la usada al cifrar debe lanzar InvalidTag."""
         container = _encrypt_bytes(b"contenido secreto")
-        container["key"] = generate_key()           # reemplazar por clave nueva
+        container["key"] = _generate_key()          # reemplazar por clave nueva
         with pytest.raises(InvalidTag):
             _decrypt_bytes(container)
 
@@ -204,7 +221,7 @@ class TestMetadataTamper:
     def test_aad_completamente_diferente(self):
         """Reemplazar el AAD completo por otro debe ser detectado."""
         container = _encrypt_bytes(b"documento legal")
-        container["aad"] = build_aad("archivo_distinto.txt")
+        container["aad"] = _build_aad("archivo_distinto.txt")
         with pytest.raises(InvalidTag):
             _decrypt_bytes(container)
 
@@ -246,10 +263,231 @@ class TestRandomness:
 
     def test_nonce_es_96_bits(self):
         """El nonce debe medir exactamente 12 bytes (96 bits)."""
-        nonce = generate_nonce()
+        nonce = _generate_nonce()
         assert len(nonce) == 12
 
     def test_clave_es_256_bits(self):
         """La clave debe medir exactamente 32 bytes (256 bits)."""
-        key = generate_key()
+        key = _generate_key()
         assert len(key) == 32
+
+
+# ════════════════════════════════════════════════════════════════
+# TESTS — Cifrado hibrido
+# ════════════════════════════════════════════════════════════════
+# Pruebas requeridas:
+#   1. Dos usuarios autorizados pueden descifrar
+#   2. Usuario no autorizado NO puede descifrar
+#   3. Lista de destinatarios manipulada -> falla
+#   4. Clave privada incorrecta -> falla
+#   5. Eliminar entrada de destinatario -> falla
+
+# ════════════════════════════════════════════════════════════
+# TEST 6 — Ambos destinatarios pueden descifrar
+# ════════════════════════════════════════════════════════════
+
+class TestHybridBothUsersDecrypt:
+
+    def test_alice_y_bob_descifran_mismo_archivo(self, tmp_path):
+        """
+        Si ciframos un archivo para Alice y Bob,
+        ambos deben poder descifrarlo y obtener el mismo contenido.
+        """
+        tmp_dir = str(tmp_path)
+
+        # Crear archivo de prueba
+        original = b"Documento compartido entre Alice y Bob"
+        input_file = os.path.join(tmp_dir, "documento.txt")
+        with open(input_file, "wb") as f:
+            f.write(original)
+
+        # Generar llaves para Alice y Bob
+        alice_pub, alice_priv = _generate_rsa_pair(tmp_dir, "alice")
+        bob_pub, bob_priv = _generate_rsa_pair(tmp_dir, "bob")
+
+        # Cifrar para ambos
+        vault_file = os.path.join(tmp_dir, "documento.vault")
+        encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
+
+        # Alice descifra
+        alice_output = os.path.join(tmp_dir, "alice_resultado.txt")
+        decrypt_file_hybrid(vault_file, alice_output, alice_priv)
+        with open(alice_output, "rb") as f:
+            assert f.read() == original
+
+        # Bob descifra
+        bob_output = os.path.join(tmp_dir, "bob_resultado.txt")
+        decrypt_file_hybrid(vault_file, bob_output, bob_priv)
+        with open(bob_output, "rb") as f:
+            assert f.read() == original
+
+
+# ════════════════════════════════════════════════════════════
+# TEST 7 — Usuario NO autorizado no puede descifrar
+# ════════════════════════════════════════════════════════════
+
+class TestHybridUnauthorizedUser:
+
+    def test_intruso_no_puede_descifrar(self, tmp_path):
+        """
+        Si ciframos solo para Alice y Bob,
+        un tercer usuario (intruso) NO debe poder descifrar.
+        """
+        tmp_dir = str(tmp_path)
+
+        # Crear archivo
+        input_file = os.path.join(tmp_dir, "secreto.txt")
+        with open(input_file, "wb") as f:
+            f.write(b"Solo para Alice y Bob")
+
+        # Llaves de los autorizados
+        alice_pub, _ = _generate_rsa_pair(tmp_dir, "alice")
+        bob_pub, _ = _generate_rsa_pair(tmp_dir, "bob")
+
+        # Llaves del intruso
+        _, intruso_priv = _generate_rsa_pair(tmp_dir, "intruso")
+
+        # Cifrar solo para Alice y Bob
+        vault_file = os.path.join(tmp_dir, "secreto.vault")
+        encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
+
+        # El intruso intenta descifrar -> debe fallar
+        intruso_output = os.path.join(tmp_dir, "intruso_resultado.txt")
+        with pytest.raises(ValueError):
+            decrypt_file_hybrid(vault_file, intruso_output, intruso_priv)
+
+
+# ════════════════════════════════════════════════════════════
+# TEST 8 — Manipulacion de la lista de destinatarios falla
+# ════════════════════════════════════════════════════════════
+
+class TestHybridTamperedRecipientList:
+
+    def test_agregar_destinatario_al_header_falla(self, tmp_path):
+        """
+        Si un atacante agrega un ID a la lista de destinatarios en el header,
+        el AAD cambia y el descifrado falla por auth tag invalido.
+        """
+        tmp_dir = str(tmp_path)
+
+        input_file = os.path.join(tmp_dir, "archivo.txt")
+        with open(input_file, "wb") as f:
+            f.write(b"Contenido protegido")
+
+        alice_pub, alice_priv = _generate_rsa_pair(tmp_dir, "alice")
+        bob_pub, _ = _generate_rsa_pair(tmp_dir, "bob")
+
+        vault_file = os.path.join(tmp_dir, "archivo.vault")
+        encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
+
+        # Manipular: agregar un ID falso a la lista de destinatarios en el header
+        with open(vault_file, "r") as f:
+            container = json.load(f)
+
+        container["header"]["recipients"].append("id_falso_del_atacante")
+
+        with open(vault_file, "w") as f:
+            json.dump(container, f, indent=2)
+
+        # Alice intenta descifrar -> falla porque el AAD fue modificado
+        alice_output = os.path.join(tmp_dir, "alice_resultado.txt")
+        with pytest.raises(Exception):
+            decrypt_file_hybrid(vault_file, alice_output, alice_priv)
+
+    def test_quitar_destinatario_del_header_falla(self, tmp_path):
+        """
+        Si un atacante elimina un ID de la lista en el header,
+        el descifrado tambien falla.
+        """
+        tmp_dir = str(tmp_path)
+
+        input_file = os.path.join(tmp_dir, "archivo.txt")
+        with open(input_file, "wb") as f:
+            f.write(b"Contenido protegido")
+
+        alice_pub, alice_priv = _generate_rsa_pair(tmp_dir, "alice")
+        bob_pub, _ = _generate_rsa_pair(tmp_dir, "bob")
+
+        vault_file = os.path.join(tmp_dir, "archivo.vault")
+        encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
+
+        # Manipular: quitar el ultimo destinatario del header
+        with open(vault_file, "r") as f:
+            container = json.load(f)
+
+        container["header"]["recipients"].pop()
+
+        with open(vault_file, "w") as f:
+            json.dump(container, f, indent=2)
+
+        alice_output = os.path.join(tmp_dir, "alice_resultado.txt")
+        with pytest.raises(Exception):
+            decrypt_file_hybrid(vault_file, alice_output, alice_priv)
+
+
+# ════════════════════════════════════════════════════════════
+# TEST 9 — Clave privada incorrecta falla
+# ════════════════════════════════════════════════════════════
+
+class TestHybridWrongPrivateKey:
+
+    def test_privada_de_otro_usuario_falla(self, tmp_path):
+        """
+        Si Alice intenta descifrar con la clave privada de Carol
+        (que no es destinataria), debe fallar.
+        """
+        tmp_dir = str(tmp_path)
+
+        input_file = os.path.join(tmp_dir, "archivo.txt")
+        with open(input_file, "wb") as f:
+            f.write(b"Solo para Alice")
+
+        alice_pub, _ = _generate_rsa_pair(tmp_dir, "alice")
+        _, carol_priv = _generate_rsa_pair(tmp_dir, "carol")
+
+        vault_file = os.path.join(tmp_dir, "archivo.vault")
+        encrypt_file_hybrid(input_file, vault_file, [alice_pub])
+
+        # Carol intenta descifrar con SU clave privada -> falla
+        carol_output = os.path.join(tmp_dir, "carol_resultado.txt")
+        with pytest.raises(ValueError):
+            decrypt_file_hybrid(vault_file, carol_output, carol_priv)
+
+
+# ════════════════════════════════════════════════════════════
+# TEST 10 — Eliminar entrada de destinatario rompe el acceso
+# ════════════════════════════════════════════════════════════
+
+class TestHybridRemovedRecipientEntry:
+
+    def test_eliminar_entrada_de_bob_impide_descifrado(self, tmp_path):
+        """
+        Si alguien elimina la entrada de Bob de la lista recipients
+        del contenedor, Bob ya no puede descifrar.
+        """
+        tmp_dir = str(tmp_path)
+
+        input_file = os.path.join(tmp_dir, "archivo.txt")
+        with open(input_file, "wb") as f:
+            f.write(b"Para Alice y Bob")
+
+        alice_pub, _ = _generate_rsa_pair(tmp_dir, "alice")
+        bob_pub, bob_priv = _generate_rsa_pair(tmp_dir, "bob")
+
+        vault_file = os.path.join(tmp_dir, "archivo.vault")
+        encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
+
+        # Manipular: eliminar la entrada de Bob del contenedor
+        with open(vault_file, "r") as f:
+            container = json.load(f)
+
+        # Quedarse solo con el primer destinatario (Alice)
+        container["recipients"] = [container["recipients"][0]]
+
+        with open(vault_file, "w") as f:
+            json.dump(container, f, indent=2)
+
+        # Bob intenta descifrar -> falla porque su entrada ya no existe
+        bob_output = os.path.join(tmp_dir, "bob_resultado.txt")
+        with pytest.raises(ValueError):
+            decrypt_file_hybrid(vault_file, bob_output, bob_priv)
