@@ -260,3 +260,168 @@ vault_container (.vault)
 | `ciphertext` | Hex string | Archivo cifrado concatenado con el auth tag de 16 bytes. |
 
 ---
+
+## 7. Flujo de cifrado y descifrado
+
+### Cifrado (`encrypt_file_hybrid`)
+
+```
+Archivo original + lista de claves públicas
+       │
+       ▼
+  1. Leer contenido (bytes)
+       │
+       ▼
+  2. Generar file_key AES-256       ← AESGCM.generate_key(256)
+  3. Generar nonce 96 bits          ← os.urandom(12)          
+       │
+       ▼
+  4. Para cada clave pública:
+     a. Calcular fingerprint (SHA-256)
+     b. Cifrar file_key con RSA-OAEP → encrypted_key
+       │
+       ▼
+  5. Construir AAD con filename + lista ordenada de IDs + version
+       │
+       ▼
+  6. aesgcm.encrypt(nonce, plaintext, aad) → ciphertext + auth_tag
+       │
+       ▼
+  7. Guardar contenedor .vault (header, recipients, nonce, ciphertext)
+```
+
+### Descifrado (`decrypt_file_hybrid`)
+
+```
+Archivo .vault + clave privada del usuario
+       │
+       ▼
+  1. Leer contenedor JSON
+       │
+       ▼
+  2. Cargar clave privada
+       │
+       ▼
+  3. Calcular mi fingerprint → my_id
+  4. Buscar my_id en recipients (búsqueda directa)
+       │
+       ├── NO encontrado → ValueError (usuario no autorizado)
+       │
+       └── Encontrado:
+            │
+            ▼
+       5. Descifrar encrypted_key con RSA-OAEP → file_key
+            │
+            ▼
+       6. Reconstruir AAD desde header
+            │
+            ▼
+       7. aesgcm.decrypt(nonce, ciphertext, aad)
+            │
+            ├── OK → plaintext → escribir archivo de salida
+            │
+            └── FALLO → error de autenticación (contenedor manipulado)
+```
+
+---
+
+## 8. Decisiones de seguridad
+
+### ¿Cómo identifican los destinatarios su llave?
+
+Cada destinatario se identifica por el **fingerprint SHA-256 de su clave pública** (primeros 32
+caracteres hexadecimales). Este método fue elegido sobre otras alternativas:
+
+| Opción | Ventaja | Desventaja | ¿La usamos? |
+|--------|---------|------------|-------------|
+| **Fingerprint de clave pública** | Determinista, no depende de datos externos, vinculado a la identidad criptográfica | Requiere calcular el hash de la clave | **Sí** ✓ |
+| Nombre de archivo de la clave | Simple de implementar | Frágil: renombrar el archivo rompe la búsqueda | No |
+| Nombre de usuario explícito | Legible para humanos | No está vinculado a ninguna clave; un atacante podría reclamar cualquier nombre | No |
+
+### ¿Qué ocurre si el atacante modifica la lista de destinatarios?
+
+La lista de IDs de destinatarios está incluida en el AAD de AES-GCM. Esto significa que
+**cualquier modificación a la lista invalida el auth tag**, causando que el descifrado falle
+con un error de autenticación. Los ataques que esto previene son:
+
+- **Agregar un destinatario no autorizado** al header → falla.
+- **Eliminar un destinatario** del header para ocultar que tenía acceso → falla.
+- **Intercambiar un ID** por otro en la lista → falla.
+
+Si el atacante modifica la lista `recipients` (las entradas con las claves cifradas) en lugar
+del header, el destinatario legítimo encontrará su ID en el header pero la clave cifrada
+correspondiente no descifrará correctamente → también falla.
+
+### ¿Qué ocurre si la clave pública es incorrecta?
+
+Si se cifra la `file_key` con una clave pública que no corresponde al destinatario previsto:
+
+1. El fingerprint de esa clave será diferente → el destinatario real no encontrará su entrada
+   en la lista y recibirá un `ValueError`.
+2. Si por coincidencia el ID fuera el mismo, el descifrado RSA-OAEP fallaría porque la clave privada no corresponde a la pública usada.
+
+En ambos casos, **ningún dato se filtra**. El sistema falla de forma segura sin revelar
+información sobre la clave ni sobre el contenido del archivo.
+
+---
+
+## 9. Generación de claves RSA (`keys_manager.py`)
+
+Para que cada usuario tenga su identidad criptográfica, se implementó el módulo `keys_manager.py`
+que genera pares de claves RSA y los guarda como archivos PEM:
+
+```python
+from vault.crypto.keys_manager import generate_user_keys
+generate_user_keys("alice")
+# Genera: alice_private.pem y alice_public.pem
+```
+
+| Parámetro | Valor | Justificación |
+|-----------|-------|---------------|
+| **Exponente público** | 65537 | Valor estándar recomendado. Permite verificación rápida. |
+| **Tamaño de clave** | 2048 bits | Seguridad equivalente a ~112 bits simétricos. |
+| **Formato privada** | PEM / PKCS8 | Formato estándar, compatible con OpenSSL y otras herramientas. |
+| **Formato pública** | PEM / SubjectPublicKeyInfo | Formato estándar X.509 para claves públicas. |
+
+---
+
+## 10. Pruebas implementadas
+
+Se implementaron **6 tests**  para D3 que cubren todos los escenarios requeridos:
+
+| # | Clase | Qué valida |
+|---|-------|------------|
+| 6 | `TestHybridBothUsersDecrypt` | Alice y Bob descifran el mismo archivo correctamente |
+| 7 | `TestHybridUnauthorizedUser` | Un intruso (tercer usuario) no puede descifrar |
+| 8a | `TestHybridTamperedRecipientList` | Agregar un ID falso al header → descifrado falla |
+| 8b | `TestHybridTamperedRecipientList` | Quitar un ID del header → descifrado falla |
+| 9 | `TestHybridWrongPrivateKey` | Clave privada de otro usuario → descifrado falla |
+| 10 | `TestHybridRemovedRecipientEntry` | Eliminar la entrada de Bob del contenedor → Bob no puede descifrar |
+
+Ejecutar con: `pytest tests/test_encryption.py -v`
+
+
+
+---
+
+## 11. Uso desde la CLI
+
+### Generar identidad (par de claves)
+
+```bash
+python main.py identidad alice
+# Genera: alice_private.pem y alice_public.pem
+```
+
+### Cifrar para múltiples destinatarios
+
+```bash
+python main.py cifrar documento.txt documento.vault --publicas alice_public.pem bob_public.pem
+```
+
+### Descifrar con tu clave privada
+
+```bash
+python main.py descifrar documento.vault recuperado.txt --privada alice_private.pem
+```
+
