@@ -213,3 +213,50 @@ independientemente del orden en que se pasen las claves públicas al cifrar, el 
 siempre produce los mismos bytes → el descifrado funciona correctamente.
 
 ---
+## 6. Formato del contenedor `.vault` (D3)
+
+### Estructura
+
+```
+vault_container (.vault)
+ ├── header        → metadatos autenticados (AAD), incluye lista de destinatarios
+ ├── recipients    → lista de {recipient_id, encrypted_key} por cada destinatario
+ ├── nonce         → valor único para este cifrado (hex)
+ └── ciphertext    → contenido cifrado + auth_tag de 16 bytes (hex)
+```
+
+### Ejemplo real
+
+```json
+{
+  "header": {
+    "filename": "documento.txt",
+    "recipients": [
+      "a1b2c3d4e5f6789012345678abcdef01",
+      "f0e1d2c3b4a5968778695a4b3c2d1e0f"
+    ],
+    "version": "2.0"
+  },
+  "recipients": [
+    {
+      "recipient_id": "a1b2c3d4e5f6789012345678abcdef01",
+      "encrypted_key": "3f8a7b...c9d201"
+    },
+    {
+      "recipient_id": "f0e1d2c3b4a5968778695a4b3c2d1e0f",
+      "encrypted_key": "7c2e5d...a8f403"
+    }
+  ],
+  "nonce": "a1b2c3d4e5f6a1b2c3d4e5f6",
+  "ciphertext": "7f3a9c...e8b201"
+}
+```
+
+| Campo | Formato | Descripción |
+|-------|---------|-------------|
+| `header` | Objeto JSON | Metadatos autenticados (AAD). Incluye `filename`, `recipients` (lista de IDs) y `version`. |
+| `recipients` | Array JSON | Lista de entradas, cada una con el `recipient_id` y la `file_key` cifrada con RSA-OAEP. |
+| `nonce` | Hex string | Nonce de 12 bytes usado en AES-GCM. |
+| `ciphertext` | Hex string | Archivo cifrado concatenado con el auth tag de 16 bytes. |
+
+---
