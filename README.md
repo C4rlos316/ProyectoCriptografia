@@ -39,58 +39,53 @@ pip install -r requirements.txt
 ### Uso (CLI)
 
 ```bash
-# Genera alice_private.pem y alice_public.pem
+# 1. Generar pares de llaves (Curva Elíptica / RSA)
 python main.py identidad alice
-
-# Genera bob_private.pem y bob_public.pem
 python main.py identidad bob
 
-# Cifra 'archivo.txt' para que tanto Alice como Bob puedan abrirlo
+# 2. Cifrar un archivo (Cifrado Híbrido Multidestinatario)
 python main.py cifrar archivo.txt archivo.vault --publicas alice_public.pem bob_public.pem
 
-#Si eres alice
+# 3. Descifrar como Alice (Búsqueda por Fingerprint SHA-256)
 python main.py descifrar archivo.vault recuperado_alice.txt --privada alice_private.pem
 
-#Si eres bob
+# 4. Descifrar como Bob
 python main.py descifrar archivo.vault recuperado_bob.txt --privada bob_private.pem
-```
 
-### Ejecutar pruebas
-
-```bash
-python -m pytest tests/test_encryption.py -v
-```
+# Ejecutar suite de pruebas completa (Simétrico D2 + Híbrido D3)
+python -m pytest tests/ -v
 
 ---
 
 ## Estructura del Proyecto
 
-```
 ProyectoCriptografia/
-├── vault/                      # Módulo principal
+├── vault/                      # Módulo criptográfico principal
 │   └── crypto/
 │       ├── __init__.py
-│       └── encryption.py       # AES-GCM-256: cifrado y descifrado
+│       └── encryption.py       # Motor AES-GCM-256 y Cifrado Híbrido
 ├── tests/
-│   ├── test_encryption.py      # Tests unitarios
+│   ├── test_encryption.py      # Tests unitarios (Motor Simétrico D2)
+│   └── test_hybrid.py          # Tests unitarios (Híbrido, Metadatos y Accesos D3)
 │
 ├── docs/
-│   └── encryption_design.md    # Diseño criptográfico detallado
+│   ├── encryption_design.md    # Diseño criptográfico base (D2)
+│   ├── hybrid_design.md        # Diseño de compartición segura y Fingerprints (D3)
+│   └── presentacion_d4.pdf     # Diapositivas de la auditoría de seguridad (D4)
 ├── main.py                     # Interfaz de línea de comandos (CLI)
 ├── requirements.txt            # Dependencias: cryptography, pytest
-├── pytest.ini                  # Configuración de pytest
-├── diagrama.png                # Diagrama de arquitectura
+├── diagrama.png                # Diagrama de arquitectura del sistema
 └── README.md
-```
 
 ---
 
 ## Documentación Técnica
 
-| Documento | Descripción |
-|-----------|-------------|
-| [Diseño de Cifrado — D2: Cifrado Autenticado de Archivos](docs/encryption_design.md) | Diseño completo del módulo criptográfico: algoritmo AES-GCM-256, estrategia de nonce, datos autenticados asociados (AAD), formato del contenedor `.vault`, flujo de cifrado/descifrado, pruebas implementadas, decisiones de seguridad y manual de uso CLI |
-
+| Documento | Descripción | Fase |
+|-----------|-------------|------|
+| [Diseño de Cifrado Base](docs/encryption_design.md) | Arquitectura AES-GCM-256, estrategia de nonce, vector de inicialización y prevención de ataques de oráculo de padding. | D2 |
+| [Diseño de Cifrado Híbrido](docs/hybrid_design.md) | Implementación de derivación de *Fingerprints* con SHA-256 en formato DER, envoltura de llaves y protección estricta de metadatos en el AAD. | D3 |
+| [Revisión de Arquitectura](docs/presentacion_d4.pdf) | Material de apoyo visual, modelo de amenazas y diagrama de flujo utilizado para la auditoría de seguridad. | D4 |
 ---
 
 ## Arquitectura y modelo de amenazas
