@@ -363,10 +363,10 @@ class TestHybridUnauthorizedUser:
 
 class TestHybridTamperedRecipientList:
 
-    def test_agregar_destinatario_al_header_falla(self, tmp_path):
+    def test_agregar_campo_al_header_falla(self, tmp_path):
         """
-        Si un atacante agrega un ID a la lista de destinatarios en el header,
-        el AAD cambia y el descifrado falla por auth tag invalido.
+        Si un atacante agrega un campo extra al header (que forma parte del AAD),
+        el AAD reconstruido cambia y el descifrado falla por auth tag invalido.
         """
         tmp_dir = str(tmp_path)
 
@@ -380,11 +380,11 @@ class TestHybridTamperedRecipientList:
         vault_file = os.path.join(tmp_dir, "archivo.vault")
         encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
 
-        # Manipular: agregar un ID falso a la lista de destinatarios en el header
+        # Manipular: agregar un campo extra al header (modifica el AAD real)
         with open(vault_file, "r") as f:
             container = json.load(f)
 
-        container["header"]["recipients"].append("id_falso_del_atacante")
+        container["header"]["atacante"] = "id_falso"  # el header ES el AAD
 
         with open(vault_file, "w") as f:
             json.dump(container, f, indent=2)
@@ -394,10 +394,10 @@ class TestHybridTamperedRecipientList:
         with pytest.raises(Exception):
             decrypt_file_hybrid(vault_file, alice_output, alice_priv)
 
-    def test_quitar_destinatario_del_header_falla(self, tmp_path):
+    def test_modificar_filename_en_header_falla(self, tmp_path):
         """
-        Si un atacante elimina un ID de la lista en el header,
-        el descifrado tambien falla.
+        Si un atacante modifica el filename en el header (que forma parte del AAD),
+        el AAD reconstruido ya no coincide con el tag y el descifrado falla.
         """
         tmp_dir = str(tmp_path)
 
@@ -411,11 +411,11 @@ class TestHybridTamperedRecipientList:
         vault_file = os.path.join(tmp_dir, "archivo.vault")
         encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
 
-        # Manipular: quitar el ultimo destinatario del header
+        # Manipular: cambiar el filename en el header (modifica el AAD real)
         with open(vault_file, "r") as f:
             container = json.load(f)
 
-        container["header"]["recipients"].pop()
+        container["header"]["filename"] = "archivo_diferente.txt"  # el header ES el AAD
 
         with open(vault_file, "w") as f:
             json.dump(container, f, indent=2)

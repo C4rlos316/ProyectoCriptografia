@@ -56,9 +56,11 @@ python main.py descifrar archivo.vault recuperado_bob.txt --privada bob_private.
 python -m pytest tests/ -v
 
 ---
+```
 
 ## Estructura del Proyecto
 
+```
 ProyectoCriptografia/
 ├── vault/                      # Módulo criptográfico principal
 │   └── crypto/
@@ -76,7 +78,7 @@ ProyectoCriptografia/
 ├── requirements.txt            # Dependencias: cryptography, pytest
 ├── diagrama.png                # Diagrama de arquitectura del sistema
 └── README.md
-
+```
 ---
 
 ## Documentación Técnica
