@@ -7,7 +7,14 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric import rsa
 from vault.crypto.encryption import encrypt_file_hybrid, decrypt_file_hybrid
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+
+from vault.crypto.encryption import (
+    decrypt_file_hybrid,
+    encrypt_file_hybrid,
+    verify_signature,
+)
 
 # ════════════════════════════════════════════════════════════
 # HELPERS — funciones auxiliares para los tests
@@ -57,34 +64,87 @@ def _decrypt_bytes(container: dict) -> bytes:
     aesgcm = AESGCM(container["key"])
     return aesgcm.decrypt(container["nonce"], container["ciphertext"], container["aad"])
 
-def _generate_rsa_pair(tmp_dir, username):
-    """
-    Genera un par de llaves RSA y las guarda como archivos .pem
-    en el directorio temporal. Retorna (ruta_publica, ruta_privada).
-    """
-    private_key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048
-    )
 
+def _gen_rsa_pair(tmp_dir: str, username: str):
+    """Genera par RSA y guarda PEMs. Retorna (pub_path, priv_path)."""
+    priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+ 
     priv_path = os.path.join(tmp_dir, f"{username}_private.pem")
-    pub_path = os.path.join(tmp_dir, f"{username}_public.pem")
-
+    pub_path  = os.path.join(tmp_dir, f"{username}_public.pem")
+ 
     with open(priv_path, "wb") as f:
-        f.write(private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
+        f.write(priv.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
         ))
-
     with open(pub_path, "wb") as f:
-        f.write(private_key.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        f.write(priv.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
         ))
-
     return pub_path, priv_path
-
+ 
+ 
+def _gen_ed25519_pair(tmp_dir: str, username: str):
+    """Genera par Ed25519 y guarda PEMs. Retorna (pub_path, priv_path)."""
+    priv = Ed25519PrivateKey.generate()
+ 
+    priv_path = os.path.join(tmp_dir, f"{username}_signing_private.pem")
+    pub_path  = os.path.join(tmp_dir, f"{username}_signing_public.pem")
+ 
+    with open(priv_path, "wb") as f:
+        f.write(priv.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ))
+    with open(pub_path, "wb") as f:
+        f.write(priv.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ))
+    return pub_path, priv_path
+ 
+ 
+def _make_signed_vault(tmp_path, content: bytes = b"Contenido confidencial de prueba"):
+    """
+    Crea un .vault firmado listo para usar en tests.
+    Retorna un dict con todas las rutas relevantes.
+    """
+    tmp_dir = str(tmp_path)
+ 
+    # Archivo de entrada
+    input_file = os.path.join(tmp_dir, "original.txt")
+    with open(input_file, "wb") as f:
+        f.write(content)
+ 
+    # Llaves del destinatario (RSA)
+    alice_pub, alice_priv = _gen_rsa_pair(tmp_dir, "alice")
+ 
+    # Llaves del remitente (Ed25519)
+    sender_sign_pub, sender_sign_priv = _gen_ed25519_pair(tmp_dir, "sender")
+ 
+    # Cifrar + firmar
+    vault_file = os.path.join(tmp_dir, "archivo.vault")
+    encrypt_file_hybrid(
+        input_file,
+        vault_file,
+        [alice_pub],
+        signing_priv_path=sender_sign_priv,
+    )
+ 
+    return {
+        "input_file":      input_file,
+        "vault_file":      vault_file,
+        "alice_pub":       alice_pub,
+        "alice_priv":      alice_priv,
+        "sender_sign_pub": sender_sign_pub,
+        "sender_sign_priv": sender_sign_priv,
+        "original":        content,
+        "tmp_dir":         tmp_dir,
+    }
+ 
 
 # ════════════════════════════════════════════════════════════
 # TEST 1 — encrypt → decrypt = archivo idéntico
@@ -302,8 +362,8 @@ class TestHybridBothUsersDecrypt:
             f.write(original)
 
         # Generar llaves para Alice y Bob
-        alice_pub, alice_priv = _generate_rsa_pair(tmp_dir, "alice")
-        bob_pub, bob_priv = _generate_rsa_pair(tmp_dir, "bob")
+        alice_pub, alice_priv = _gen_rsa_pair(tmp_dir, "alice")
+        bob_pub, bob_priv = _gen_rsa_pair(tmp_dir, "bob")
 
         # Cifrar para ambos
         vault_file = os.path.join(tmp_dir, "documento.vault")
@@ -341,11 +401,11 @@ class TestHybridUnauthorizedUser:
             f.write(b"Solo para Alice y Bob")
 
         # Llaves de los autorizados
-        alice_pub, _ = _generate_rsa_pair(tmp_dir, "alice")
-        bob_pub, _ = _generate_rsa_pair(tmp_dir, "bob")
+        alice_pub, _ = _gen_rsa_pair(tmp_dir, "alice")
+        bob_pub, _ = _gen_rsa_pair(tmp_dir, "bob")
 
         # Llaves del intruso
-        _, intruso_priv = _generate_rsa_pair(tmp_dir, "intruso")
+        _, intruso_priv = _gen_rsa_pair(tmp_dir, "intruso")
 
         # Cifrar solo para Alice y Bob
         vault_file = os.path.join(tmp_dir, "secreto.vault")
@@ -374,8 +434,8 @@ class TestHybridTamperedRecipientList:
         with open(input_file, "wb") as f:
             f.write(b"Contenido protegido")
 
-        alice_pub, alice_priv = _generate_rsa_pair(tmp_dir, "alice")
-        bob_pub, _ = _generate_rsa_pair(tmp_dir, "bob")
+        alice_pub, alice_priv = _gen_rsa_pair(tmp_dir, "alice")
+        bob_pub, _ = _gen_rsa_pair(tmp_dir, "bob")
 
         vault_file = os.path.join(tmp_dir, "archivo.vault")
         encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
@@ -405,8 +465,8 @@ class TestHybridTamperedRecipientList:
         with open(input_file, "wb") as f:
             f.write(b"Contenido protegido")
 
-        alice_pub, alice_priv = _generate_rsa_pair(tmp_dir, "alice")
-        bob_pub, _ = _generate_rsa_pair(tmp_dir, "bob")
+        alice_pub, alice_priv = _gen_rsa_pair(tmp_dir, "alice")
+        bob_pub, _ = _gen_rsa_pair(tmp_dir, "bob")
 
         vault_file = os.path.join(tmp_dir, "archivo.vault")
         encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
@@ -442,8 +502,8 @@ class TestHybridWrongPrivateKey:
         with open(input_file, "wb") as f:
             f.write(b"Solo para Alice")
 
-        alice_pub, _ = _generate_rsa_pair(tmp_dir, "alice")
-        _, carol_priv = _generate_rsa_pair(tmp_dir, "carol")
+        alice_pub, _ = _gen_rsa_pair(tmp_dir, "alice")
+        _, carol_priv = _gen_rsa_pair(tmp_dir, "carol")
 
         vault_file = os.path.join(tmp_dir, "archivo.vault")
         encrypt_file_hybrid(input_file, vault_file, [alice_pub])
@@ -471,8 +531,8 @@ class TestHybridRemovedRecipientEntry:
         with open(input_file, "wb") as f:
             f.write(b"Para Alice y Bob")
 
-        alice_pub, _ = _generate_rsa_pair(tmp_dir, "alice")
-        bob_pub, bob_priv = _generate_rsa_pair(tmp_dir, "bob")
+        alice_pub, _ = _gen_rsa_pair(tmp_dir, "alice")
+        bob_pub, bob_priv = _gen_rsa_pair(tmp_dir, "bob")
 
         vault_file = os.path.join(tmp_dir, "archivo.vault")
         encrypt_file_hybrid(input_file, vault_file, [alice_pub, bob_pub])
@@ -491,3 +551,332 @@ class TestHybridRemovedRecipientEntry:
         bob_output = os.path.join(tmp_dir, "bob_resultado.txt")
         with pytest.raises(ValueError):
             decrypt_file_hybrid(vault_file, bob_output, bob_priv)
+
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 11 — Firma válida: archivo aceptado y descifrado correctamente
+# ══════════════════════════════════════════════════════════════════════════════
+ 
+class TestValidSignatureAccepted:
+ 
+    def test_firma_valida_descifra_correctamente(self, tmp_path):
+        """
+        Un contenedor firmado con una llave Ed25519 válida debe:
+        1. Pasar la verificación de firma.
+        2. Descifrar el contenido correctamente.
+        """
+        ctx = _make_signed_vault(tmp_path, b"Documento secreto firmado y cifrado")
+ 
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        decrypt_file_hybrid(
+            ctx["vault_file"],
+            output_file,
+            ctx["alice_priv"],
+            signing_pub_path=ctx["sender_sign_pub"],
+        )
+ 
+        with open(output_file, "rb") as f:
+            resultado = f.read()
+ 
+        assert resultado == ctx["original"], (
+            "El contenido descifrado no coincide con el original."
+        )
+ 
+    def test_contenedor_contiene_campos_de_firma(self, tmp_path):
+        """
+        El .vault generado con firma debe contener los campos 'signature' y 'signer_id'.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        assert "signature"  in container, "Falta el campo 'signature' en el contenedor."
+        assert "signer_id"  in container, "Falta el campo 'signer_id' en el contenedor."
+ 
+        # La firma Ed25519 es 64 bytes = 128 chars hex
+        assert len(container["signature"]) == 128, (
+            f"Longitud de firma inesperada: {len(container['signature'])} chars."
+        )
+ 
+    def test_verify_signature_no_lanza_en_firma_valida(self, tmp_path):
+        """
+        verify_signature() NO debe lanzar excepción cuando la firma es válida.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        # No debe lanzar nada
+        verify_signature(container, ctx["sender_sign_pub"])
+ 
+ 
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 12 — Ciphertext modificado → firma rechazada
+# ══════════════════════════════════════════════════════════════════════════════
+ 
+class TestTamperedCiphertextRejected:
+ 
+    def test_ciphertext_modificado_invalida_firma(self, tmp_path):
+        """
+        Si un atacante modifica el ciphertext en el contenedor,
+        la verificación de firma debe fallar con ValueError.
+        El descifrado NO debe ejecutarse.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        # Manipular: cambiar el último byte del ciphertext hex
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        ct = container["ciphertext"]
+        # Flip del último byte (siempre hay al menos 2 chars)
+        last_byte = int(ct[-2:], 16) ^ 0xFF
+        container["ciphertext"] = ct[:-2] + f"{last_byte:02x}"
+ 
+        tampered_vault = os.path.join(ctx["tmp_dir"], "tampered.vault")
+        with open(tampered_vault, "w") as f:
+            json.dump(container, f, indent=2)
+ 
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        with pytest.raises(ValueError, match="[Ff]irma|[Mm]odificado|[Rr]echazado"):
+            decrypt_file_hybrid(
+                tampered_vault,
+                output_file,
+                ctx["alice_priv"],
+                signing_pub_path=ctx["sender_sign_pub"],
+            )
+ 
+    def test_ciphertext_modificado_verify_signature_lanza(self, tmp_path):
+        """
+        verify_signature() directamente debe lanzar ValueError
+        cuando el ciphertext fue modificado.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        # Sustituir todo el ciphertext por basura
+        container["ciphertext"] = "deadbeef" * 20
+ 
+        with pytest.raises(ValueError):
+            verify_signature(container, ctx["sender_sign_pub"])
+ 
+ 
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 13 — Metadatos header modificado → firma rechazada
+# ══════════════════════════════════════════════════════════════════════════════
+ 
+class TestTamperedMetadataRejected:
+ 
+    def test_modificar_filename_invalida_firma(self, tmp_path):
+        """
+        Cambiar el filename en el header debe invalidar la firma,
+        porque el header forma parte del material firmado.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        container["header"]["filename"] = "archivo_malicioso.exe"
+ 
+        tampered_vault = os.path.join(ctx["tmp_dir"], "tampered.vault")
+        with open(tampered_vault, "w") as f:
+            json.dump(container, f, indent=2)
+ 
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        with pytest.raises(ValueError):
+            decrypt_file_hybrid(
+                tampered_vault,
+                output_file,
+                ctx["alice_priv"],
+                signing_pub_path=ctx["sender_sign_pub"],
+            )
+ 
+    def test_agregar_campo_al_header_invalida_firma(self, tmp_path):
+        """
+        Agregar un campo nuevo al header (ej. campo 'atacante') modifica
+        el material firmado y debe invalidar la firma.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        container["header"]["campo_extra"] = "inyeccion_de_metadato"
+ 
+        tampered_vault = os.path.join(ctx["tmp_dir"], "tampered_header.vault")
+        with open(tampered_vault, "w") as f:
+            json.dump(container, f, indent=2)
+ 
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        with pytest.raises(ValueError):
+            decrypt_file_hybrid(
+                tampered_vault,
+                output_file,
+                ctx["alice_priv"],
+                signing_pub_path=ctx["sender_sign_pub"],
+            )
+ 
+
+ 
+ 
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 14 — Llave pública incorrecta → verificación rechazada
+# ══════════════════════════════════════════════════════════════════════════════
+ 
+class TestWrongPublicKeyRejected:
+ 
+    def test_llave_publica_de_otro_usuario_rechazada(self, tmp_path):
+        """
+        Si se intenta verificar la firma con la llave pública de otro usuario
+        (que no firmó el archivo), debe fallar con ValueError.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        # Generar un par Ed25519 completamente distinto (impostor)
+        impostor_pub, _ = _gen_ed25519_pair(ctx["tmp_dir"], "impostor")
+ 
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        with pytest.raises(ValueError, match="[Ff]irma|[Ii]nválid|[Rr]echazado"):
+            decrypt_file_hybrid(
+                ctx["vault_file"],
+                output_file,
+                ctx["alice_priv"],
+                signing_pub_path=impostor_pub,
+            )
+ 
+    def test_llave_rsa_en_lugar_de_ed25519_rechazada(self, tmp_path):
+        """
+        Pasar una llave RSA donde se espera Ed25519 debe resultar en error.
+        El sistema no debe descifrar si la verificación no puede completarse.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        # La llave pública RSA de Alice no es Ed25519 → no puede verificar la firma
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        with pytest.raises(Exception):
+            decrypt_file_hybrid(
+                ctx["vault_file"],
+                output_file,
+                ctx["alice_priv"],
+                signing_pub_path=ctx["alice_pub"],  # llave RSA, no Ed25519
+            )
+ 
+    def test_verify_signature_con_llave_incorrecta(self, tmp_path):
+        """
+        verify_signature() directamente debe lanzar ValueError
+        cuando la llave pública no corresponde al firmante.
+        """
+        ctx = _make_signed_vault(tmp_path)
+        wrong_pub, _ = _gen_ed25519_pair(ctx["tmp_dir"], "wrong")
+ 
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        with pytest.raises(ValueError):
+            verify_signature(container, wrong_pub)
+ 
+ 
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 15 — Firma eliminada del contenedor → rechazado
+# ══════════════════════════════════════════════════════════════════════════════
+ 
+class TestMissingSignatureRejected:
+ 
+    def test_sin_campo_signature_rechazado(self, tmp_path):
+        """
+        Si se elimina el campo 'signature' del contenedor, la verificación
+        debe rechazarlo con ValueError indicando ausencia de firma.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        del container["signature"]
+ 
+        no_sig_vault = os.path.join(ctx["tmp_dir"], "no_signature.vault")
+        with open(no_sig_vault, "w") as f:
+            json.dump(container, f, indent=2)
+ 
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        with pytest.raises(ValueError, match="[Ff]irma|[Ss]ignature|[Aa]utenticac"):
+            decrypt_file_hybrid(
+                no_sig_vault,
+                output_file,
+                ctx["alice_priv"],
+                signing_pub_path=ctx["sender_sign_pub"],
+            )
+ 
+    def test_sin_campo_signer_id_rechazado(self, tmp_path):
+        """
+        Si se elimina el campo 'signer_id', la verificación también debe fallar.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        del container["signer_id"]
+ 
+        no_id_vault = os.path.join(ctx["tmp_dir"], "no_signer_id.vault")
+        with open(no_id_vault, "w") as f:
+            json.dump(container, f, indent=2)
+ 
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        with pytest.raises(ValueError):
+            decrypt_file_hybrid(
+                no_id_vault,
+                output_file,
+                ctx["alice_priv"],
+                signing_pub_path=ctx["sender_sign_pub"],
+            )
+ 
+    def test_contenedor_firmado_sin_llave_verificacion_rechazado(self, tmp_path):
+        """
+        Si el contenedor tiene firma pero NO se proporciona llave de verificación,
+        el sistema debe rechazarlo en lugar de ignorar la firma silenciosamente.
+        Aceptar una firma sin verificarla anularía todas las garantías de D5.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        with pytest.raises(ValueError, match="[Ff]irma|[Pp]ública|[Vv]erificar"):
+            # Sin signing_pub_path → debe rechazarse porque el contenedor está firmado
+            decrypt_file_hybrid(
+                ctx["vault_file"],
+                output_file,
+                ctx["alice_priv"],
+                signing_pub_path=None,
+            )
+ 
+    def test_firma_vacia_rechazada(self, tmp_path):
+        """
+        Una firma vacía (string vacío) debe ser rechazada.
+        """
+        ctx = _make_signed_vault(tmp_path)
+ 
+        with open(ctx["vault_file"], "r") as f:
+            container = json.load(f)
+ 
+        container["signature"] = ""
+ 
+        empty_sig_vault = os.path.join(ctx["tmp_dir"], "empty_sig.vault")
+        with open(empty_sig_vault, "w") as f:
+            json.dump(container, f, indent=2)
+ 
+        output_file = os.path.join(ctx["tmp_dir"], "recuperado.txt")
+        with pytest.raises(Exception):
+            decrypt_file_hybrid(
+                empty_sig_vault,
+                output_file,
+                ctx["alice_priv"],
+                signing_pub_path=ctx["sender_sign_pub"],
+            )
+ 
