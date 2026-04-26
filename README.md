@@ -1,5 +1,10 @@
 # 🔐 Proyecto Criptografía
 
+![Estado: D1 Completado](https://img.shields.io/badge/Sprint_D1-Completado-success)
+![Estado: D2 Completado](https://img.shields.io/badge/Sprint_D2-Completado-success)
+![Estado: D3 Completado](https://img.shields.io/badge/Sprint_D3-Completado-success)
+![Estado: D4 Completado](https://img.shields.io/badge/Sprint_D4-Revisado-success)
+![Estado: D5 Completado](https://img.shields.io/badge/Sprint_D5-Firmas_Digitales-success)
 
 ### Integrantes del equipo y roles
 
@@ -43,16 +48,22 @@ pip install -r requirements.txt
 python main.py identidad alice
 python main.py identidad bob
 
-# 2. Cifrar un archivo (Cifrado Híbrido Multidestinatario)
-python main.py cifrar archivo.txt archivo.vault --publicas alice_public.pem bob_public.pem
+# 2. Generar llaves para firma Ed25519 del remitente
+python main.py identidad-firma alice
 
-# 3. Descifrar como Alice (Búsqueda por Fingerprint SHA-256)
-python main.py descifrar archivo.vault recuperado_alice.txt --privada alice_private.pem
+# 3. Cifrar un archivo (Cifrado Híbrido Multidestinatario)
+python main.py cifrar documento.txt documento.vault --publicas alice_public.pem bob_public.pem
 
-# 4. Descifrar como Bob
-python main.py descifrar archivo.vault recuperado_bob.txt --privada bob_private.pem
+# 3.1 Cifrar y Firmar digitalmente (Autenticación de origen)
+python main.py cifrar documento.txt documento.vault --publicas alice_public.pem bob_public.pem --firma-privada alice_signing_private.pem
 
-# Ejecutar suite de pruebas completa (Simétrico D2 + Híbrido D3)
+# 4. Descifrar sin verificar firma
+python main.py descifrar documento.vault recuperado.txt --privada alice_private.pem
+
+# 4.1 Descifrar y Verificar firma (Protección total)
+python main.py descifrar documento.vault recuperado.txt --privada alice_private.pem --firma-publica alice_signing_public.pem
+
+# Ejecutar suite de pruebas completa
 python -m pytest tests/ -v
 
 ---
@@ -65,7 +76,8 @@ ProyectoCriptografia/
 ├── vault/                      # Módulo criptográfico principal
 │   └── crypto/
 │       ├── __init__.py
-│       └── encryption.py       # Motor AES-GCM-256 y Cifrado Híbrido
+│       ├── encryption.py       # Motor de cifrado: AES-GCM (D2), Híbrido (D3) y Firmas (D5)
+│       └── keys_manager.py     # Gestión de identidades: RSA-2048 y Ed25519
 ├── tests/
 │   ├── test_encryption.py      # Tests unitarios (Motor Simétrico D2)
 │   └── test_hybrid.py          # Tests unitarios (Híbrido, Metadatos y Accesos D3)
@@ -73,6 +85,7 @@ ProyectoCriptografia/
 ├── docs/
 │   ├── encryption_design.md    # Diseño criptográfico base (D2)
 │   ├── hybrid_design.md        # Diseño de compartición segura y Fingerprints (D3)
+│   ├── signature_design.md     # Diseño de la firma y desiciones de seguridad (D5)
 │   └── presentacion_d4.pdf     # Diapositivas de la auditoría de seguridad (D4)
 ├── main.py                     # Interfaz de línea de comandos (CLI)
 ├── requirements.txt            # Dependencias: cryptography, pytest
@@ -88,6 +101,7 @@ ProyectoCriptografia/
 | [Diseño de Cifrado Base](docs/encryption_design.md) | Arquitectura AES-GCM-256, estrategia de nonce, vector de inicialización y prevención de ataques de oráculo de padding. | D2 |
 | [Diseño de Cifrado Híbrido](docs/hybrid_design.md) | Implementación de derivación de *Fingerprints* con SHA-256 en formato DER, envoltura de llaves y protección estricta de metadatos en el AAD. | D3 |
 | [Revisión de Arquitectura](docs/presentacion_d4.pdf) | Material de apoyo visual, modelo de amenazas y diagrama de flujo utilizado para la auditoría de seguridad. | D4 |
+| [Diseño de Firmas Digitales](docs/signature_design.md) | Integración de algoritmos Ed25519, flujo de verificación previa y prevención de ataques de manipulación de contexto. | D5 |
 ---
 
 ## Arquitectura y modelo de amenazas
