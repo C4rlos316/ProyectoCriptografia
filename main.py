@@ -117,14 +117,13 @@ Ejemplos de uso:
                 args.privada,
                 signing_pub_path=args.firma_publica,
             )
-        except FileNotFoundError as e:
-            print(f"ERROR: No se encontró el archivo: {e}", file=sys.stderr)
-            sys.exit(1)
-        except ValueError as e:
-            print(f"ERROR: {e}", file=sys.stderr)
-            sys.exit(1)
         except Exception:
-            print("ERROR: Autenticación fallida o archivo corrupto.", file=sys.stderr)
+            # Fix-D3: Mensaje genérico — no distinguir entre causas de fallo
+            print(
+                "ERROR: Operación de descifrado fallida. "
+                "Verifique que el archivo, la llave y la firma sean correctos.",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     else:
