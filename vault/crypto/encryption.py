@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import json
 import os
 
@@ -14,7 +15,26 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # ══════════════════════════════════════════════════════════
 # Funciones usadas por los tests 
 # ══════════════════════════════════════════════════════════
-
+def get_canonical_representation(data: dict) -> str:
+    """
+    Genera la representación canónica de un objeto según la especificación:
+    - Pedido de claves: Lexicográfico (A-Z).
+    - Codificación: UTF-8.
+    - Inclusión de campo: Solo campos con valores no nulos.
+    - Espaciado: Sin espacios (compacto).
+    """
+    if data is None:
+        return ""
+    # Regla de inclusión: filtramos valores nulos
+    filtered_data = {k: v for k, v in data.items() if v is not None}
+    
+    # Regla de pedido de claves y espaciado
+    return json.dumps(
+        filtered_data, 
+        separators=(",", ":"), 
+        sort_keys=True, 
+        ensure_ascii=False
+    )
 def generate_key() -> bytes:
     """Genera una clave AES-256 aleatoria (32 bytes)."""
     return AESGCM.generate_key(bit_length=256)
@@ -26,16 +46,9 @@ def generate_nonce() -> bytes:
 
 
 def build_aad(filename: str) -> bytes:
-    """
-    Construye el Additional Authenticated Data (AAD) a partir del nombre de archivo.
-    El AAD se autentica pero NO se cifra: si alguien lo modifica, el descifrado falla.
-    """
-    aad_dict = {
-        "algorithm": "AES-GCM-256",
-        "filename":  filename,
-        "version":   "1.0",
-    }
-    return json.dumps(aad_dict, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    aad_dict = {"algorithm": "AES-GCM-256", "filename": filename, "version": "1.0"}
+    # EVIDENCIA: Uso de representación canónica para AAD
+    return get_canonical_representation(aad_dict).encode("utf-8")
 
 
 def encrypt_file(input_path: str, output_path: str) -> bytes:
@@ -100,15 +113,8 @@ def _get_signing_fingerprint(public_key) -> str:
 
 
 def _build_signable(header: dict, ciphertext_hex: str) -> bytes:
-    """
-    Construye el mensaje que se firma:
-        SHA-256( ciphertext_hex_bytes || header_json_bytes )
-
-      - ciphertext_hex : el archivo cifrado; cualquier modificación invalida la firma.
-      - header (AAD)   : filename, recipients, version; impide manipular metadatos.
-
-    """
-    header_bytes = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    # EVIDENCIA: Uso de representación canónica para la entrada de firma
+    header_bytes = get_canonical_representation(header).encode("utf-8")
     material = ciphertext_hex.encode("utf-8") + header_bytes
     return hashlib.sha256(material).digest()
 
@@ -143,6 +149,14 @@ def verify_signature(container: dict, signing_pub_path: str) -> None:
 
     with open(signing_pub_path, "rb") as f:
         pub_key = serialization.load_pem_public_key(f.read())
+
+    # ── Fix-D4: Verificar signer_id con comparación en tiempo constante ──
+    expected_id = _get_signing_fingerprint(pub_key)
+    if not hmac.compare_digest(expected_id, container["signer_id"]):
+        raise ValueError(
+            "Firma inválida: el archivo fue modificado o el remitente no coincide. "
+            "Archivo rechazado."
+        )
 
     signable       = _build_signable(container["header"], container["ciphertext"])
     signature_bytes = bytes.fromhex(container["signature"])
@@ -219,7 +233,7 @@ def encrypt_file_hybrid(
         "recipients": sorted(recipient_ids),
         "version":    "2.0",
     }
-    aad = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    aad = get_canonical_representation(header).encode("utf-8")
 
     # ── 4. Cifrar datos ──
     aesgcm     = AESGCM(file_key)
@@ -250,6 +264,46 @@ def encrypt_file_hybrid(
     print(f"[+] Archivo cifrado{signed_msg} para {len(public_key_paths)} destinatario(s).")
 
 
+# ── Mensaje genérico de error (Fix-D3: evita oracle de errores) ──────────────
+_GENERIC_DECRYPT_ERROR = (
+    "Operación de descifrado fallida. "
+    "Verifique que el archivo, la llave privada y la llave de firma sean correctos."
+)
+
+
+def _validate_container(container: dict) -> None:
+    """
+    Fix-D5: Valida que el contenedor JSON tenga la estructura esperada
+    ANTES de cualquier operación criptográfica.
+    Rechaza archivos malformados con un error controlado.
+    """
+    required_fields = {"header", "nonce", "ciphertext", "recipients"}
+    missing = required_fields - set(container.keys())
+    if missing:
+        raise ValueError(
+            f"Contenedor inválido: campos faltantes: {', '.join(sorted(missing))}."
+        )
+
+    # Validar tipos básicos
+    if not isinstance(container["header"], dict):
+        raise ValueError("Contenedor inválido: 'header' debe ser un objeto JSON.")
+    if not isinstance(container["recipients"], list):
+        raise ValueError("Contenedor inválido: 'recipients' debe ser una lista.")
+    if not isinstance(container["nonce"], str):
+        raise ValueError("Contenedor inválido: 'nonce' debe ser una cadena hex.")
+    if not isinstance(container["ciphertext"], str):
+        raise ValueError("Contenedor inválido: 'ciphertext' debe ser una cadena hex.")
+
+    # Validar cada entrada de recipient
+    for i, entry in enumerate(container["recipients"]):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Contenedor inválido: recipients[{i}] no es un objeto.")
+        if "recipient_id" not in entry or "encrypted_key" not in entry:
+            raise ValueError(
+                f"Contenedor inválido: recipients[{i}] sin campos requeridos."
+            )
+
+
 def decrypt_file_hybrid(
     vault_path: str,
     output_path: str,
@@ -263,6 +317,9 @@ def decrypt_file_hybrid(
     """
     with open(vault_path, "r") as f:
         container = json.load(f)
+
+    # ── Fix-D5: Validar estructura ANTES de cualquier operación ───
+    _validate_container(container)
 
     # ── Verificar firma ANTES de cualquier descifrado ───
     if signing_pub_path:
@@ -286,10 +343,9 @@ def decrypt_file_hybrid(
         for entry in container["recipients"]
     }
 
+    # Fix-D3: Mensaje genérico en lugar de revelar la causa exacta
     if my_id not in recipients_index:
-        raise ValueError(
-            "Este usuario no está en la lista de destinatarios autorizados."
-        )
+        raise ValueError(_GENERIC_DECRYPT_ERROR)
 
     # ── Desenvolver la file_key con RSA-OAEP ────
     encrypted_key_bytes = bytes.fromhex(recipients_index[my_id]["encrypted_key"])
@@ -303,10 +359,7 @@ def decrypt_file_hybrid(
             ),
         )
     except Exception:
-        raise ValueError(
-            "No se pudo desenvolver la llave de archivo. "
-            "La llave privada no corresponde a este contenedor."
-        )
+        raise ValueError(_GENERIC_DECRYPT_ERROR)
 
     # ── Reconstruir AAD y descifrar con AES-GCM ────
     nonce      = bytes.fromhex(container["nonce"])
@@ -319,9 +372,7 @@ def decrypt_file_hybrid(
     try:
         plaintext = aesgcm.decrypt(nonce, ciphertext, aad)
     except InvalidTag:
-        raise ValueError(
-            "Autenticación AES-GCM fallida: el archivo fue modificado o está corrupto."
-        )
+        raise ValueError(_GENERIC_DECRYPT_ERROR)
 
     with open(output_path, "wb") as f:
         f.write(plaintext)
