@@ -15,7 +15,26 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # ══════════════════════════════════════════════════════════
 # Funciones usadas por los tests 
 # ══════════════════════════════════════════════════════════
-
+def get_canonical_representation(data: dict) -> str:
+    """
+    Genera la representación canónica de un objeto según la especificación:
+    - Pedido de claves: Lexicográfico (A-Z).
+    - Codificación: UTF-8.
+    - Inclusión de campo: Solo campos con valores no nulos.
+    - Espaciado: Sin espacios (compacto).
+    """
+    if data is None:
+        return ""
+    # Regla de inclusión: filtramos valores nulos
+    filtered_data = {k: v for k, v in data.items() if v is not None}
+    
+    # Regla de pedido de claves y espaciado
+    return json.dumps(
+        filtered_data, 
+        separators=(",", ":"), 
+        sort_keys=True, 
+        ensure_ascii=False
+    )
 def generate_key() -> bytes:
     """Genera una clave AES-256 aleatoria (32 bytes)."""
     return AESGCM.generate_key(bit_length=256)
@@ -27,16 +46,9 @@ def generate_nonce() -> bytes:
 
 
 def build_aad(filename: str) -> bytes:
-    """
-    Construye el Additional Authenticated Data (AAD) a partir del nombre de archivo.
-    El AAD se autentica pero NO se cifra: si alguien lo modifica, el descifrado falla.
-    """
-    aad_dict = {
-        "algorithm": "AES-GCM-256",
-        "filename":  filename,
-        "version":   "1.0",
-    }
-    return json.dumps(aad_dict, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    aad_dict = {"algorithm": "AES-GCM-256", "filename": filename, "version": "1.0"}
+    # EVIDENCIA: Uso de representación canónica para AAD
+    return get_canonical_representation(aad_dict).encode("utf-8")
 
 
 def encrypt_file(input_path: str, output_path: str) -> bytes:
@@ -101,15 +113,8 @@ def _get_signing_fingerprint(public_key) -> str:
 
 
 def _build_signable(header: dict, ciphertext_hex: str) -> bytes:
-    """
-    Construye el mensaje que se firma:
-        SHA-256( ciphertext_hex_bytes || header_json_bytes )
-
-      - ciphertext_hex : el archivo cifrado; cualquier modificación invalida la firma.
-      - header (AAD)   : filename, recipients, version; impide manipular metadatos.
-
-    """
-    header_bytes = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    # EVIDENCIA: Uso de representación canónica para la entrada de firma
+    header_bytes = get_canonical_representation(header).encode("utf-8")
     material = ciphertext_hex.encode("utf-8") + header_bytes
     return hashlib.sha256(material).digest()
 
@@ -228,7 +233,7 @@ def encrypt_file_hybrid(
         "recipients": sorted(recipient_ids),
         "version":    "2.0",
     }
-    aad = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    aad = get_canonical_representation(header).encode("utf-8")
 
     # ── 4. Cifrar datos ──
     aesgcm     = AESGCM(file_key)
