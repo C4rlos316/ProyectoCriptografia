@@ -880,3 +880,47 @@ class TestMissingSignatureRejected:
                 signing_pub_path=ctx["sender_sign_pub"],
             )
  
+ 
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 16 — Modificación del Nonce
+# ══════════════════════════════════════════════════════════════════════════════
+ 
+class TestNonceModification:
+ 
+    def test_nonce_reemplazado_impide_descifrado(self, tmp_path):
+        """
+        Modificación: Se reemplazó todo el nonce de 12 bytes con bytes aleatorios.
+ 
+        Comportamiento observado: El sistema rechaza el archivo con error genérico.
+        AES-GCM detecta la inconsistencia entre el nonce modificado y el auth tag
+        original, lanzando InvalidTag internamente.
+ 
+        ¿Detectado? Sí.
+        Propiedad afectada: Integridad.
+        """
+        tmp_dir = str(tmp_path)
+ 
+        # Crear archivo y cifrarlo
+        input_file = os.path.join(tmp_dir, "archivo.txt")
+        with open(input_file, "wb") as f:
+            f.write(b"Contenido confidencial de prueba")
+ 
+        alice_pub, alice_priv = _gen_rsa_pair(tmp_dir, "alice")
+ 
+        vault_file = os.path.join(tmp_dir, "archivo.vault")
+        encrypt_file_hybrid(input_file, vault_file, [alice_pub])
+ 
+        # Modificación: reemplazar el nonce completo por 12 bytes aleatorios
+        with open(vault_file, "r") as f:
+            container = json.load(f)
+ 
+        container["nonce"] = os.urandom(12).hex()
+ 
+        manipulado_vault = os.path.join(tmp_dir, "manipulado.vault")
+        with open(manipulado_vault, "w") as f:
+            json.dump(container, f, indent=2)
+ 
+        # El sistema debe rechazar el descifrado
+        output_file = os.path.join(tmp_dir, "recuperado.txt")
+        with pytest.raises(Exception):
+            decrypt_file_hybrid(manipulado_vault, output_file, alice_priv)
