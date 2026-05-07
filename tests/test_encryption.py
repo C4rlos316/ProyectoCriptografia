@@ -20,6 +20,34 @@ from vault.crypto.encryption import (
 # HELPERS — funciones auxiliares para los tests
 # ════════════════════════════════════════════════════════════
 
+def test_private_key_is_encrypted():
+    """
+    Validación de seguridad: Verifica si la llave privada está cifrada en reposo.
+    Este test fallará si la llave se puede cargar sin contraseña.
+    """
+    # 1. Ruta de la llave generada para la prueba
+    # Ajusta el nombre del archivo según como lo genere tu comando 'identidad'
+    key_path = "alice_private.pem" 
+    
+    if not os.path.exists(key_path):
+        pytest.skip(f"No se encontró el archivo {key_path}. Ejecuta primero el comando de identidad.")
+
+    with open(key_path, "rb") as key_file:
+        key_data = key_file.read()
+
+    # 2. Intento de carga sin contraseña (password=None)
+    # Si la vulnerabilidad existe, la función tendrá éxito y entrará al pytest.fail
+    try:
+        serialization.load_pem_private_key(
+            key_data,
+            password=None
+        )
+        pytest.fail("HALLAZGO CRÍTICO: La clave privada no tiene cifrado (NoEncryption).")
+    
+    except (TypeError, ValueError):
+        # Comportamiento esperado una vez corregido: la carga falla sin la contraseña
+        pass
+
 def _generate_key() -> bytes:
     """Genera una clave AES-256 (32 bytes)."""
     return AESGCM.generate_key(bit_length=256)
@@ -923,4 +951,4 @@ class TestNonceModification:
         # El sistema debe rechazar el descifrado
         output_file = os.path.join(tmp_dir, "recuperado.txt")
         with pytest.raises(Exception):
-            decrypt_file_hybrid(manipulado_vault, output_file, alice_priv)
+            decrypt_file_hybrid(manipulado_vault, output_file, alice_priv)
