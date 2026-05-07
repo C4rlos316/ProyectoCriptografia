@@ -1,13 +1,27 @@
-REPORTE DE AUDITORÍA DE SEGURIDAD: HALLAZGO #011. 
-TítuloAlmacenamiento de claves privadas en texto claro (Falta de cifrado en reposo).
-2. Descripción
-El sistema de bóveda segura implementa una función para generar identidades (pares de claves RSA) a través del comando python main.py identidad <nombre>. Sin embargo, se ha detectado que el proceso de serialización de la clave privada generada (<nombre>_private.pem) utiliza el algoritmo NoEncryption().  Esto significa que la clave privada se almacena en el disco duro en formato PEM de texto claro, sin estar protegida por una contraseña o una Función de Derivación de Claves (KDF). Esta implementación contradice los requisitos de seguridad establecidos en la documentación del proyecto, donde se afirma que las llaves deben estar protegidas ante adversarios con acceso al sistema de archivos.  
-3. ImpactoLa gravedad de esta vulnerabilidad es Crítica.Compromiso de Identidad: Cualquier adversario con acceso de lectura al sistema de archivos puede extraer la clave privada.  Suplantación de Identidad: Con la clave privada en texto claro, un atacante puede firmar documentos digitalmente haciéndose pasar por el usuario legítimo sin necesidad de conocer una contraseña.Pérdida de Confidencialidad: El atacante puede descifrar cualquier archivo .vault dirigido al usuario comprometido, invalidando completamente el cifrado híbrido RSA-OAEP-2048 del sistema.  
-4. Pasos para reproducir el fenómenoGenerar una identidad: 
-Ejecutar el comando python main.py identidad alice.  
-Inspeccionar el archivo: 
-Abrir el archivo generado alice_private.pem con un editor de texto o mediante el comando type alice_private.pem (Windows) o cat alice_private.pem (Linux/macOS).  
-Verificar el encabezado: Comprobar que el archivo comienza con la etiqueta -----BEGIN PRIVATE KEY-----. Si no aparece la etiqueta ENCRYPTED, la llave no tiene cifrado.Validación de carga: Ejecutar un script de Python que utilice load_pem_private_key de la librería cryptography pasando password=None. 
-Si la llave se carga sin lanzar una excepción de tipo TypeError, la vulnerabilidad está confirmada.
-5. Gravedad
-CRÍTICA6. Arreglo (Solución Propuesta)Se debe modificar el módulo de gestión de llaves para obligar al usuario a introducir una frase de contraseña al generar su identidad. En el código, se debe sustituir la serialización insegura por una que utilice un algoritmo de cifrado robusto.
+# 1- Almacenamiento Inseguro de Identidades
+
+### Título: Persistencia de claves privadas en texto claro (Falta de cifrado en reposo)
+
+### Descripción
+El sistema de bóveda segura permite la generación de identidades mediante el comando `python main.py identidad <nombre>`, produciendo archivos `.pem` para las llaves pública y privada. Se ha identificado que la función de serialización en el código fuente utiliza `serialization.NoEncryption()`, lo que provoca que la clave privada se almacene sin ninguna capa de protección criptográfica en el disco duro
+
+Esta implementación contradice directamente el modelo de seguridad del proyecto, el cual exige que las claves privadas estén protegidas por una Función de Derivación de Claves (KDF) y cifrado simétrico para evitar el acceso no autorizado por parte de adversarios con acceso al sistema de archivos
+
+### Impacto
+El impacto de este hallazgo es **Crítico**, afectando los pilares de Confidencialidad y Autenticidad del sistema:
+* **Acceso No Autorizado:** Cualquier usuario o proceso con permisos de lectura sobre el archivo `.pem` puede extraer la clave privada directamente.
+* **Suplantación de Identidad:** Un atacante puede cargar la llave sin conocer una contraseña, permitiéndole descifrar archivos dirigidos al usuario y generar firmas digitales falsas a su nombre.
+* **Nulidad de Protección:** Se invalida el factor de conocimiento, dejando la seguridad del sistema dependiente exclusivamente de la seguridad física del dispositivo.
+
+### Pasos para reproducir el fenómeno
+1. **Generación:** Ejecutar el comando `python main.py identidad alice` para crear una nueva identidad.
+2. **Inspección:** Abrir el archivo generado `alice_private.pem` con un editor de texto plano o mediante el comando `type` en consola.
+3. **Verificación visual:** Confirmar que el encabezado del archivo es `-----BEGIN PRIVATE KEY-----`La ausencia de la etiqueta `ENCRYPTED` confirma que la llave no posee cifrado.
+4. **Validación técnica:** Ejecutar un script que utilice `load_pem_private_key(data, password=None)`. Si la llave se carga exitosamente, la vulnerabilidad es positiva.
+
+### Gravedad
+**CRÍTICA**
+
+### Arreglar
+Se debe modificar la lógica de persistencia de llaves para solicitar obligatoriamente una contraseña al usuario y aplicar el estándar de cifrado **PKCS8** con **AES-256**.
+
