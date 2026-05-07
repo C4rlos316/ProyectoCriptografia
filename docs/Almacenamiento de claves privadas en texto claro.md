@@ -1,0 +1,13 @@
+REPORTE DE AUDITORÍA DE SEGURIDAD: HALLAZGO #011. 
+TítuloAlmacenamiento de claves privadas en texto claro (Falta de cifrado en reposo).
+2. Descripción
+El sistema de bóveda segura implementa una función para generar identidades (pares de claves RSA) a través del comando python main.py identidad <nombre>. Sin embargo, se ha detectado que el proceso de serialización de la clave privada generada (<nombre>_private.pem) utiliza el algoritmo NoEncryption().  Esto significa que la clave privada se almacena en el disco duro en formato PEM de texto claro, sin estar protegida por una contraseña o una Función de Derivación de Claves (KDF). Esta implementación contradice los requisitos de seguridad establecidos en la documentación del proyecto, donde se afirma que las llaves deben estar protegidas ante adversarios con acceso al sistema de archivos.  
+3. ImpactoLa gravedad de esta vulnerabilidad es Crítica.Compromiso de Identidad: Cualquier adversario con acceso de lectura al sistema de archivos puede extraer la clave privada.  Suplantación de Identidad: Con la clave privada en texto claro, un atacante puede firmar documentos digitalmente haciéndose pasar por el usuario legítimo sin necesidad de conocer una contraseña.Pérdida de Confidencialidad: El atacante puede descifrar cualquier archivo .vault dirigido al usuario comprometido, invalidando completamente el cifrado híbrido RSA-OAEP-2048 del sistema.  
+4. Pasos para reproducir el fenómenoGenerar una identidad: 
+Ejecutar el comando python main.py identidad alice.  
+Inspeccionar el archivo: 
+Abrir el archivo generado alice_private.pem con un editor de texto o mediante el comando type alice_private.pem (Windows) o cat alice_private.pem (Linux/macOS).  
+Verificar el encabezado: Comprobar que el archivo comienza con la etiqueta -----BEGIN PRIVATE KEY-----. Si no aparece la etiqueta ENCRYPTED, la llave no tiene cifrado.Validación de carga: Ejecutar un script de Python que utilice load_pem_private_key de la librería cryptography pasando password=None. 
+Si la llave se carga sin lanzar una excepción de tipo TypeError, la vulnerabilidad está confirmada.
+5. Gravedad
+CRÍTICA6. Arreglo (Solución Propuesta)Se debe modificar el módulo de gestión de llaves para obligar al usuario a introducir una frase de contraseña al generar su identidad. En el código, se debe sustituir la serialización insegura por una que utilice un algoritmo de cifrado robusto.
