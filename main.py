@@ -95,14 +95,11 @@ Ejemplos de uso:
         generate_signing_keys(args.usuario)
 
     elif args.comando == "cifrar":
-        # Fix Vulnerabilidad 1: advertir cuando no se proporciona firma
         if args.firma_privada is None:
-            print("⚠️  ADVERTENCIA: No se proporcionó --firma-privada.",
-                  file=sys.stderr)
-            print("   El archivo .vault NO será firmado digitalmente.",
-                  file=sys.stderr)
-            print("   El destinatario no podrá verificar tu identidad.",
-                  file=sys.stderr)
+            print("⚠️  ADVERTENCIA: No se proporcionó --firma-privada.", file=sys.stderr)
+            print("   El .vault NO será firmado digitalmente.", file=sys.stderr)
+            print("   El destinatario no podrá verificar tu identidad.", file=sys.stderr)
+
         try:
             encrypt_file_hybrid(
                 args.entrada,
@@ -120,8 +117,7 @@ Ejemplos de uso:
     elif args.comando == "descifrar":
         # Fix Vulnerabilidad 1: advertir cuando no se proporciona verificación de firma
         if args.firma_publica is None:
-            print("⚠️  ADVERTENCIA: No se proporcionó --firma-publica.",
-                  file=sys.stderr)
+            print("⚠️  ADVERTENCIA: No se proporcionó --firma-publica.", file=sys.stderr)
             print("   La firma NO será verificada.", file=sys.stderr)
             print("   No podrás confirmar la identidad del remitente.",
                   file=sys.stderr)
