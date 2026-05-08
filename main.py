@@ -95,6 +95,11 @@ Ejemplos de uso:
         generate_signing_keys(args.usuario)
 
     elif args.comando == "cifrar":
+        if args.firma_privada is None:
+            print("⚠️  ADVERTENCIA: No se proporcionó --firma-privada.", file=sys.stderr)
+            print("   El .vault NO será firmado digitalmente.", file=sys.stderr)
+            print("   El receptor no puede verificar tu identidad.", file=sys.stderr)
+
         try:
             encrypt_file_hybrid(
                 args.entrada,
@@ -110,6 +115,11 @@ Ejemplos de uso:
             sys.exit(1)
 
     elif args.comando == "descifrar":
+        if args.firma_publica is None:
+            print("⚠️  ADVERTENCIA: No se prporcionó --firma-publica.", file=sys.stderr)
+            print("   La firma NO será verificada.", file=sys.stderr)
+            print("   No puedes confirmar la identidad del emisor.", file=sys.stderr)
+
         try:
             decrypt_file_hybrid(
                 args.entrada,
