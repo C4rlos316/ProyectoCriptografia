@@ -3,6 +3,7 @@ import Identidad from './pages/Identidad'
 import IdentidadFirma from './pages/IdentidadFirma'
 import Cifrar from './pages/Cifrar'
 import Descifrar from './pages/Descifrar'
+import Home from './pages/Home'
 import './App.css'
 
 export default function App() {
@@ -14,7 +15,7 @@ export default function App() {
           <span>Secure Vault</span>
         </div>
         <div className="nav-links">
-          <NavLink to="/" end>Identidad</NavLink>
+          <NavLink to="/identidad">Identidad</NavLink>
           <NavLink to="/identidad-firma">Firma</NavLink>
           <NavLink to="/cifrar">Cifrar</NavLink>
           <NavLink to="/descifrar">Descifrar</NavLink>
@@ -22,7 +23,8 @@ export default function App() {
       </nav>
       <main className="container">
         <Routes>
-          <Route path="/" element={<Identidad />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/identidad" element={<Identidad />} />
           <Route path="/identidad-firma" element={<IdentidadFirma />} />
           <Route path="/cifrar" element={<Cifrar />} />
           <Route path="/descifrar" element={<Descifrar />} />
