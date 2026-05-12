@@ -21,14 +21,16 @@ def _validate_username(user_name: str) -> None:
         )
 
 
-def generate_user_keys(user_name):
+def generate_user_keys(user_name: str, password: str):
     _validate_username(user_name)
-    # 1. Generar la llave privada RSA
+    
+    if not password:
+        raise ValueError("Se requiere una contraseña para proteger la llave privada.")
+
     private_key = rsa.generate_private_key(
         public_exponent=65537,
         key_size=2048,
     )
-
     priv_file = f"{user_name}_private.pem"
     pub_file  = f"{user_name}_public.pem"
 
@@ -36,28 +38,23 @@ def generate_user_keys(user_name):
         f.write(private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
+            encryption_algorithm=serialization.BestAvailableEncryption(password.encode("utf-8")),
         ))
-
     with open(pub_file, "wb") as f:
         f.write(private_key.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         ))
-
-    print(f"[OK] Identidad RSA generada para '{user_name}'")
-    print(f"   - Creado: {priv_file}")
-    print(f"   - Creado: {pub_file}")
+    print(f"[OK] Identidad RSA generada para '{user_name}' (llave privada protegida con contraseña)")
 
 
-def generate_signing_keys(user_name: str):
-    """
-    Genera un par de llaves Ed25519 para firma digital.
-    Guarda: {user_name}_signing_private.pem  y  {user_name}_signing_public.pem
-    """
+def generate_signing_keys(user_name: str, password: str):
     _validate_username(user_name)
-    private_key = Ed25519PrivateKey.generate()
 
+    if not password:
+        raise ValueError("Se requiere una contraseña para proteger la llave privada de firma.")
+
+    private_key = Ed25519PrivateKey.generate()
     priv_file = f"{user_name}_signing_private.pem"
     pub_file  = f"{user_name}_signing_public.pem"
 
@@ -65,15 +62,11 @@ def generate_signing_keys(user_name: str):
         f.write(private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
+            encryption_algorithm=serialization.BestAvailableEncryption(password.encode("utf-8")),
         ))
-
     with open(pub_file, "wb") as f:
         f.write(private_key.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         ))
-
-    print(f"[OK] Llaves de firma Ed25519 generadas para '{user_name}'")
-    print(f"   - Creado: {priv_file}")
-    print(f"   - Creado: {pub_file}")
+    print(f"[OK] Llaves Ed25519 generadas para '{user_name}' (llave privada protegida con contraseña)")

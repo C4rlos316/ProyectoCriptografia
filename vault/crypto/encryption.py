@@ -119,7 +119,7 @@ def _build_signable(header: dict, ciphertext_hex: str) -> bytes:
     return hashlib.sha256(material).digest()
 
 
-def sign_container(header: dict, ciphertext_hex: str, signing_priv_path: str) -> tuple:
+def sign_container(header: dict, ciphertext_hex: str, signing_priv_path: str, password: bytes = None) -> tuple:
     """
     Firma el contenedor usando la llave privada Ed25519 del remitente.
 
@@ -127,7 +127,7 @@ def sign_container(header: dict, ciphertext_hex: str, signing_priv_path: str) ->
     para verificar, sin necesidad de probar cada llave disponible.
     """
     with open(signing_priv_path, "rb") as f:
-        priv_key = serialization.load_pem_private_key(f.read(), password=None)
+        priv_key = serialization.load_pem_private_key(f.read(), password=password)
 
     signable  = _build_signable(header, ciphertext_hex)
     signature = priv_key.sign(signable)
@@ -191,6 +191,7 @@ def encrypt_file_hybrid(
     output_path: str,
     public_key_paths: list,
     signing_priv_path: str = None,
+    signing_password: bytes = None,
 ) -> None:
     """
     Cifra un archivo usando cifrado híbrido AES-GCM + RSA-OAEP para N destinatarios.
@@ -253,6 +254,7 @@ def encrypt_file_hybrid(
             container["header"],
             container["ciphertext"],
             signing_priv_path,
+            password=signing_password,
         )
         container["signature"] = sig_hex
         container["signer_id"] = signer_id
@@ -309,6 +311,7 @@ def decrypt_file_hybrid(
     output_path: str,
     private_key_path: str,
     signing_pub_path: str = None,
+    password: bytes = None,
 ) -> None:
     """
     Descifra un contenedor .vault con la llave privada RSA del destinatario.
@@ -334,7 +337,7 @@ def decrypt_file_hybrid(
 
     # ── Cargar llave privada RSA del destinatario ───
     with open(private_key_path, "rb") as f:
-        priv_key = serialization.load_pem_private_key(f.read(), password=None)
+        priv_key = serialization.load_pem_private_key(f.read(), password=password)
 
     # ── Buscar la entrada del destinatario por fingerprint  ───
     my_id = _get_key_fingerprint(priv_key.public_key())
