@@ -1,6 +1,7 @@
 import os
 import json
 import pytest
+import warnings as _warnings_module
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -14,6 +15,14 @@ from vault.crypto.encryption import (
     decrypt_file_hybrid,
     encrypt_file_hybrid,
     verify_signature,
+)
+
+from vault.crypto.keys_manager import (
+    generate_user_keys,
+    generate_signing_keys,
+    load_private_key,
+    export_keystore,
+    import_keystore,
 )
 
 # ════════════════════════════════════════════════════════════
@@ -952,3 +961,185 @@ class TestNonceModification:
         output_file = os.path.join(tmp_dir, "recuperado.txt")
         with pytest.raises(Exception):
             decrypt_file_hybrid(manipulado_vault, output_file, alice_priv)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TESTS D6 — Gestión de Claves con Cifrado
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestD6CorrectPassword:
+    """Todo el proceso  completo con contraseña correcta."""
+
+    def test_rsa_round_trip(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            generate_user_keys("alice", "contraseña_segura_123")
+            key = load_private_key("alice_private.keystore", "contraseña_segura_123")
+            assert key is not None
+            pub = key.public_key()
+            assert pub is not None
+        finally:
+            os.chdir(original_dir)
+
+    def test_ed25519_round_trip(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            generate_signing_keys("alice", "contraseña_segura_123")
+            key = load_private_key("alice_signing_private.keystore", "contraseña_segura_123")
+            assert key is not None
+        finally:
+            os.chdir(original_dir)
+
+
+class TestD6WrongPassword:
+    """Contraseña incorrecta: acceso denegado con mensaje."""
+
+    def test_wrong_password_raises_value_error(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            generate_user_keys("alice", "contraseña_correcta_123")
+            with pytest.raises(ValueError) as exc_info:
+                load_private_key("alice_private.keystore", "contraseña_incorrecta_456")
+            # Mensaje genérico para no revelar detalles
+            assert "contraseña incorrecta" in str(exc_info.value).lower() or "keystore inválido" in str(exc_info.value).lower()
+        finally:
+            os.chdir(original_dir)
+
+
+class TestD6TamperedKeystore:
+    """Keystore modificado: fallo al cargar."""
+
+    def test_tampered_salt_fails(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            generate_user_keys("alice", "contraseña_segura_123")
+            # Esto es para el tamper del salt
+            with open("alice_private.keystore", "r") as f:
+                data = json.load(f)
+            data["salt"] = "deadbeefdeadbeefdeadbeefdeadbeef"  # wrong salt
+            with open("alice_private.keystore", "w") as f:
+                json.dump(data, f)
+            with pytest.raises(ValueError):
+                load_private_key("alice_private.keystore", "contraseña_segura_123")
+        finally:
+            os.chdir(original_dir)
+
+    def test_tampered_encrypted_key_fails(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            generate_user_keys("alice", "contraseña_segura_123")
+            with open("alice_private.keystore", "r") as f:
+                data = json.load(f)
+            # Llave corrompida 
+            data["encrypted_key"] = "deadbeef" * 50
+            with open("alice_private.keystore", "w") as f:
+                json.dump(data, f)
+            with pytest.raises(ValueError):
+                load_private_key("alice_private.keystore", "contraseña_segura_123")
+        finally:
+            os.chdir(original_dir)
+
+
+class TestD6BackupRestore:
+    def test_backup_restore_round_trip(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            generate_user_keys("alice", "contraseña_segura_123")
+            backup_path = str(tmp_path / "alice_backup.keystore")
+            export_keystore("alice_private.keystore", backup_path)
+            # Importar diferente nombre 
+            restored_path = str(tmp_path / "alice_restored.keystore")
+            import_keystore(backup_path, restored_path, "contraseña_segura_123")
+            # Cargar desde el keystore restaurado
+            key = load_private_key(restored_path, "contraseña_segura_123")
+            assert key is not None
+        finally:
+            os.chdir(original_dir)
+
+
+class TestD6StolenKeystoreOnly:
+    """Keystore robado sin contraseña: no puede descifrar."""
+
+    def test_no_password_fails(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            generate_user_keys("alice", "contraseña_segura_123")
+            # Intento cargar sin contraseña, debe fallar 
+            with pytest.raises(ValueError):
+                load_private_key("alice_private.keystore", "")
+        finally:
+            os.chdir(original_dir)
+
+class TestD6EmptyPassword:
+    """Contraseña vacía: rechazada"""
+
+    def test_empty_password_rejected(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            with pytest.raises(ValueError) as exc_info:
+                generate_user_keys("alice", "")
+            assert "vacía" in str(exc_info.value) or "empty" in str(exc_info.value).lower()
+        finally:
+            os.chdir(original_dir)
+
+
+
+class TestD6WeakPasswordWarning:
+    """Contraseña < 5 chars: advertencia  pero operación no rechazada."""
+
+    def test_short_password_warns(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            with _warnings_module.catch_warnings(record=True) as w:
+                _warnings_module.simplefilter("always")
+                generate_user_keys("alice", "ab1")  # 3 caracteres
+                assert len(w) >= 1
+                warning_messages = [str(warning.message) for warning in w]
+                assert any("5" in msg or "corta" in msg.lower() or "ADVERTENCIA" in msg for msg in warning_messages)
+        finally:
+            os.chdir(original_dir)
+
+
+class TestD6KeystoreMissingFields:
+    """Campos faltantes: error descriptivo."""
+
+    def test_missing_salt_field(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            generate_user_keys("alice", "contraseña_segura_123")
+            with open("alice_private.keystore", "r") as f:
+                data = json.load(f)
+            del data["salt"]
+            with open("alice_private.keystore", "w") as f:
+                json.dump(data, f)
+            with pytest.raises(ValueError) as exc_info:
+                load_private_key("alice_private.keystore", "contraseña_segura_123")
+            assert "salt" in str(exc_info.value)
+        finally:
+            os.chdir(original_dir)
+
+    def test_missing_encrypted_key_field(self, tmp_path):
+        original_dir = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            generate_user_keys("alice", "contraseña_segura_123")
+            with open("alice_private.keystore", "r") as f:
+                data = json.load(f)
+            del data["encrypted_key"]
+            with open("alice_private.keystore", "w") as f:
+                json.dump(data, f)
+            with pytest.raises(ValueError) as exc_info:
+                load_private_key("alice_private.keystore", "contraseña_segura_123")
+            assert "encrypted_key" in str(exc_info.value)
+        finally:
+            os.chdir(original_dir)
