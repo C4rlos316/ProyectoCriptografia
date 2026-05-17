@@ -158,6 +158,7 @@ def generate_user_keys(user_name: str, password: str) -> None:
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         ))
+    print(f"[OK] Identidad RSA generada para '{user_name}' (llave privada protegida con contraseña)")
 
     # 10. Confirmación
     print(f"[OK] Identidad RSA generada para '{user_name}'")
