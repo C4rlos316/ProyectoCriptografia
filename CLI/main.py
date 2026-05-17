@@ -1,7 +1,14 @@
 import argparse
+import getpass
+import os
 import sys
 
-from vault.crypto.keys_manager import generate_user_keys, generate_signing_keys
+from vault.crypto.keys_manager import (
+    generate_user_keys,
+    generate_signing_keys,
+    export_keystore,
+    import_keystore,
+)
 from vault.crypto.encryption import encrypt_file_hybrid, decrypt_file_hybrid
 
 
@@ -24,6 +31,13 @@ Ejemplos de uso:
   # Descifrar (con verificación de firma opcional)
   python main.py descifrar doc.vault recuperado.txt --privada alice_private.pem
   python main.py descifrar doc.vault recuperado.txt --privada alice_private.pem --firma-publica alice_signing_public.pem
+
+  # Respaldar un keystore
+  python main.py respaldar alice /ruta/destino/alice_private.keystore
+  python main.py respaldar alice /ruta/destino/alice_signing_private.keystore --tipo ed25519
+
+  # Restaurar un keystore desde respaldo
+  python main.py restaurar /ruta/respaldo/alice_private.keystore
         """,
     )
     subparsers = parser.add_subparsers(
@@ -85,27 +99,58 @@ Ejemplos de uso:
         help="(Opcional) Llave pública Ed25519 del remitente para verificar la firma",
     )
 
+    # ── respaldar ──
+    parser_backup = subparsers.add_parser(
+        "respaldar",
+        help="Exporta (respalda) un keystore cifrado a una ruta de destino",
+    )
+    parser_backup.add_argument("usuario", help="Nombre del usuario (ej. alice)")
+    parser_backup.add_argument("destino", help="Ruta de destino para el respaldo")
+    parser_backup.add_argument(
+        "--tipo",
+        choices=["rsa", "ed25519"],
+        default="rsa",
+        help="Tipo de keystore a respaldar: 'rsa' o 'ed25519'",
+    )
+
+    # ── restaurar ──
+    parser_restore = subparsers.add_parser(
+        "restaurar",
+        help="Importa un keystore desde un archivo de respaldo",
+    )
+    parser_restore.add_argument(
+        "archivo",
+        help="Ruta al archivo .keystore de respaldo a restaurar",
+    )
+
     # ── dispatch ──
     args = parser.parse_args()
 
     if args.comando == "identidad":
-        generate_user_keys(args.usuario)
+        password = getpass.getpass("Contraseña maestra: ")
+        generate_user_keys(args.usuario, password)
 
     elif args.comando == "identidad-firma":
-        generate_signing_keys(args.usuario)
+        password = getpass.getpass("Contraseña maestra: ")
+        generate_signing_keys(args.usuario, password)
 
     elif args.comando == "cifrar":
         if args.firma_privada is None:
-            print("⚠️  ADVERTENCIA: No se proporcionó --firma-privada.", file=sys.stderr)
+            print("  ADVERTENCIA: No se proporcionó --firma-privada.", file=sys.stderr)
             print("   El .vault NO será firmado digitalmente.", file=sys.stderr)
             print("   El destinatario no podrá verificar tu identidad.", file=sys.stderr)
 
+        # Si la llave de firma es un .keystore cifrado, pedir contraseña
+        signing_password = None
+        if args.firma_privada and args.firma_privada.endswith(".keystore"):
+            signing_password = getpass.getpass("Contraseña de firma: ")
         try:
             encrypt_file_hybrid(
                 args.entrada,
                 args.salida,
                 args.publicas,
                 signing_priv_path=args.firma_privada,
+                signing_password=signing_password,
             )
         except FileNotFoundError as e:
             print(f"ERROR: No se encontró el archivo: {e}", file=sys.stderr)
@@ -121,12 +166,14 @@ Ejemplos de uso:
             print("   La firma NO será verificada.", file=sys.stderr)
             print("   No podrás confirmar la identidad del remitente.",
                   file=sys.stderr)
+        password = getpass.getpass("Contraseña maestra: ")
         try:
             decrypt_file_hybrid(
                 args.entrada,
                 args.salida,
                 args.privada,
                 signing_pub_path=args.firma_publica,
+                password=password,
             )
         except Exception:
             # Fix-D3: Mensaje genérico — no distinguir entre causas de fallo
@@ -135,6 +182,33 @@ Ejemplos de uso:
                 "Verifique que el archivo, la llave y la firma sean correctos.",
                 file=sys.stderr,
             )
+            sys.exit(1)
+
+    elif args.comando == "respaldar":
+        if args.tipo == "rsa":
+            keystore_path = f"{args.usuario}_private.keystore"
+        else:
+            keystore_path = f"{args.usuario}_signing_private.keystore"
+
+        try:
+            export_keystore(keystore_path, args.destino)
+            print(f"[OK] Keystore exportado a '{args.destino}'")
+        except Exception as e:
+            print(f"ERROR al respaldar: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.comando == "restaurar":
+        password = getpass.getpass("Contraseña maestra: ")
+        destination = os.path.basename(args.archivo)
+        # Evitar error "same file" si el respaldo está en el mismo directorio
+        if os.path.abspath(args.archivo) == os.path.abspath(destination):
+            base, ext = os.path.splitext(destination)
+            destination = f"{base}_restaurado{ext}"
+        try:
+            import_keystore(args.archivo, destination, password)
+            print(f"[OK] Keystore restaurado como '{destination}'")
+        except Exception as e:
+            print(f"ERROR al restaurar: {e}", file=sys.stderr)
             sys.exit(1)
 
     else:
