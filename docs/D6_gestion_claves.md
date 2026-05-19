@@ -193,3 +193,242 @@ python main.py identidad alice
        ▼
   [OK] Identidad RSA generada para 'alice'
 ```
+## 6. Flujo de carga de clave (descifrado)
+
+```
+python main.py descifrar doc.vault out.txt --privada alice_private.keystore
+       │
+       ▼
+  CLI solicita contraseña
+       │
+       ▼
+  decrypt_file_hybrid(..., password=contraseña)
+       │
+       ▼
+  load_private_key("alice_private.keystore", password)
+       │
+       ├── Leer y validar JSON
+       ├── Extraer salt, kdf, kdf_params, encrypted_key
+       ├── Derivar clave_cifrado = Argon2id(password, salt)
+       │
+       ▼
+  serialization.load_pem_private_key(encrypted_key_bytes, password=clave_cifrado)
+       │
+       ├── OK → retornar objeto clave privada en memoria
+       │
+       └── FALLO → ValueError genérico
+                   "Error al cargar la clave: contraseña incorrecta o keystore inválido."
+```
+---
+
+## 7. Estrategia de respaldo y recuperación
+
+### Principio de diseño
+
+El archivo `.keystore` **ya es nuestro respaldo**. No se necesita ninguna
+transformación adicional porque la clave privada ya está cifrada dentro de él.
+Copiar el archivo es suficiente para hacer un respaldo seguro.
+
+### Exportar (respaldar)
+
+```bash
+python main.py respaldar alice /ruta/segura/alice_private.keystore
+python main.py respaldar alice /ruta/segura/alice_signing_private.keystore --tipo ed25519
+```
+
+La operación `export_keystore` valida que el archivo fuente sea un keystore bien formado
+y lo copia preservando metadatos. **No requiere contraseña** porque
+la clave ya está cifrada.
+
+### Importar (restaurar)
+
+```bash
+python main.py restaurar /ruta/respaldo/alice_private.keystore
+```
+
+La operación `import_keystore` hace tres cosas antes de copiar:
+
+1. Valida que todos los campos requeridos estén presentes.
+2. Verifica la contraseña intentando descifrar la clave si la contraseña es incorrecta, falla aquí.
+3. Solo si la verificación pasa, copia el archivo al directorio de trabajo.
+
+Esto garantiza que no se restaure un keystore corrupto o con contraseña incorrecta.
+
+**Comportamiento automático en mismo directorio:** si el archivo de respaldo y el destino
+resolverían al mismo archivo (por ejemplo, al restaurar un `.keystore` que ya está en el
+directorio de trabajo), el sistema agrega automáticamente el sufijo `_restaurado` al nombre
+del archivo de destino:
+
+```
+# backup_alice.keystore está en el mismo directorio → se crea:
+backup_alice_restaurado.keystore
+```
+
+Esto permite restaurar sin sobreescribir el respaldo original ni generar un error.
+
+### ¿Qué pasa si se pierde el archivo keystore?
+
+Si el archivo `.keystore` se pierde sin respaldo, **la clave privada se pierde permanentemente**.
+Todos los archivos `.vault` cifrados para esa clave quedan inaccesibles. No hay mecanismo de
+recuperación sin el archivo keystore y la contraseña.
+
+
+---
+
+## 8. Ciclo de vida de la clave
+
+```
+generate_user_keys()
+       │
+       ▼
+   [activa]  ←── uso normal (cifrar/descifrar)
+       │
+       ├── generate_user_keys() con confirmación → [rotada]
+       │
+       ├── sospecha de compromiso → [comprometida]  (manual)
+       │
+       └── expires_at superado → [expirada]  (advertencia automática al cargar)
+```
+
+El campo `status` en el keystore registra el estado actual. Al cargar una clave con
+`expires_at` en el pasado, el sistema emite una advertencia pero no bloquea la operación:
+
+### Procedimiento ante compromiso de clave
+
+Si se sospecha que una clave privada fue expuesta:
+
+1. Generar un nuevo par de claves con `python main.py identidad <usuario>`.
+2. Distribuir la nueva clave pública a los remitentes.
+3. Re-cifrar todos los archivos importantes con la nueva clave pública.
+4. Tratar todos los archivos cifrados con la clave antigua como potencialmente comprometidos.
+
+No existe mecanismo de revocación automática en este sistema (está fuera del alcance).
+
+---
+
+## 9. Seguridad
+
+### ¿Qué pasa si la contraseña es débil?
+
+La seguridad del keystore depende directamente  de la contraseña. Argon2id
+hace que cada intento sea costoso, pero no puede compensar una contraseña trivial:
+
+| Contraseña | Entropía estimada | Tiempo para romper (GPU dedicada, ~10 intentos/seg) |
+|------------|-------------------|-----------------------------------------------------|
+| `123456` | ~20 bits | < 1 segundo |
+| `password` | ~28 bits | ~3 segundos |
+| `MiPerro2020` | ~40 bits | ~35 años |
+| `xK9#mP2$vL7@` | ~78 bits | > edad del universo |
+
+El sistema emite una advertencia cuando la contraseña tiene menos de **5 caracteres**, pero
+**no bloquea la operación**. La decisión final es del usuario.
+
+
+**Riesgo:** si el usuario elige una contraseña débil, la seguridad
+del keystore se reduce a la entropía de esa contraseña. Argon2id con 64 MiB ralentiza
+los ataques, pero no los hace imposibles contra contraseñas muy cortas.
+
+### ¿Qué pasa si el dispositivo está comprometido?
+
+Mientras la clave privada está cargada en memoria durante una operación de descifrado,
+un atacante con acceso a nivel de proceso  podría extraerla. Este riesgo se acepta como **fuera del alcance de la mitigación solo por software**.
+
+La mitigación disponible es sobrescribir el material de clave en memoria inmediatamente
+tras su uso. Python no garantiza esto por su modelo de gestión de memoria, pero el objeto de clave no se almacena en caché .
+
+### ¿Por qué mensajes de error genéricos?
+
+Cuando `load_private_key` falla, siempre devuelve el mismo mensaje:
+
+```
+"Error al cargar la clave: contraseña incorrecta o keystore inválido."
+```
+
+Esto previene **ataques donde el atacante puede probar contraseñas**: si el sistema distinguiera entre "contraseña incorrecta" y "keystore corrupto", aqui se podría usar esa diferencia para obtener información sobre el estado del keystore o confirmar que tiene el archivo correcto.
+
+### ¿Qué protege este sistema y qué no?
+
+| Amenaza | ¿Protegido? | Mecanismo |
+|---------|-------------|-----------|
+| Robo del archivo `.keystore` sin contraseña |  Sí | Argon2id + AES-256-CBC |
+| Ataque de diccionario offline sobre el keystore |  Sí | 64 MiB por intento limita velocidad |
+| Keystore modificado (salt o clave alterados) |  Sí | Fallo al deserializar PKCS8 |
+| Contraseña débil elegida por el usuario |  Parcial | Advertencia, pero no bloqueo |
+| Clave en memoria durante operación activa |  No | Fuera del alcance  |
+| Pérdida del archivo keystore sin respaldo |  No | Pérdida permanente de acceso |
+| Keylogger capturando la contraseña |  No | Fuera del alcance |
+
+---
+
+## 10. Uso desde la CLI
+
+### Generar identidad RSA (cifrado)
+
+```bash
+python main.py identidad alice
+# Solicita: Contraseña maestra: [sin eco]
+# Genera: alice_private.keystore  y  alice_public.pem
+```
+
+### Generar identidad Ed25519 (firma)
+
+```bash
+python main.py identidad-firma alice
+# Solicita: Contraseña maestra: [sin eco]
+# Genera: alice_signing_private.keystore  y  alice_signing_public.pem
+```
+
+### Cifrar un archivo con firma digital desde keystore
+
+El argumento `--firma-privada` acepta tanto archivos `.pem`  como archivos `.keystore` cifrados. Cuando se pasa un `.keystore`, el CLI solicita la contraseña de firma antes de proceder:
+
+```bash
+# Con keystore cifrado
+python main.py cifrar doc.txt doc.vault \
+    --publicas alice_public.pem bob_public.pem \
+    --firma-privada alice_signing_private.keystore
+# Solicita: Contraseña de firma:  ← contraseña de identidad-firma
+# Resultado: [+] Archivo cifrado y firmado digitalmente para 2 destinatario(s).
+
+# Con PEM sin cifrar
+python main.py cifrar doc.txt doc.vault \
+    --publicas alice_public.pem \
+    --firma-privada alice_signing_private.pem
+# No solicita contraseña de firma
+```
+
+### Descifrar un archivo
+
+Cuando el vault fue cifrado con firma digital, **todos los destinatarios** no solo el remitente deben pasar `--firma-publica` para verificar la autenticidad del origen.
+El sistema rechaza descifrar un vault firmado si no se proporciona la llave de verificación.
+
+```bash
+# Descifrar con verificación de firma
+python main.py descifrar doc.vault recuperado.txt \
+    --privada alice_private.keystore \
+    --firma-publica alice_signing_public.pem
+# Solicita: Contraseña maestra:
+# Resultado: [+] Archivo recuperado exitosamente. Firma verificada:  OK
+
+# Descifrar sin verificación
+python main.py descifrar doc.vault recuperado.txt --privada alice_private.keystore
+# Solicita: Contraseña maestra:
+```
+
+### Respaldar un keystore
+
+```bash
+# Respaldar clave RSA
+python main.py respaldar alice /ruta/segura/alice_private.keystore
+
+# Respaldar clave de firma Ed25519
+python main.py respaldar alice /ruta/segura/alice_signing_private.keystore --tipo ed25519
+```
+
+### Restaurar desde respaldo
+
+```bash
+python main.py restaurar /ruta/respaldo/alice_private.keystore
+# Solicita: Contraseña maestra:
+# Verifica la contraseña antes de restaurar
+```
