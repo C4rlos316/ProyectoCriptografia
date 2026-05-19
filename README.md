@@ -1,12 +1,39 @@
-# 🔐 Proyecto Criptografía
+# 🔐 Secure Digital Document Vault
 
-![Estado: D1 Completado](https://img.shields.io/badge/Sprint_D1-Completado-success)
-![Estado: D2 Completado](https://img.shields.io/badge/Sprint_D2-Completado-success)
-![Estado: D3 Completado](https://img.shields.io/badge/Sprint_D3-Completado-success)
-![Estado: D4 Completado](https://img.shields.io/badge/Sprint_D4-Revisado-success)
-![Estado: D5 Completado](https://img.shields.io/badge/Sprint_D5-Firmas_Digitales-success)
+<div align="center">
 
-### Integrantes del equipo y roles
+![D1](https://img.shields.io/badge/Sprint_D1-Completado-success)
+![D2](https://img.shields.io/badge/Sprint_D2-Completado-success)
+![D3](https://img.shields.io/badge/Sprint_D3-Completado-success)
+![D4](https://img.shields.io/badge/Sprint_D4-Revisado-success)
+![D5](https://img.shields.io/badge/Sprint_D5-Firmas_Digitales-success)
+![D6](https://img.shields.io/badge/Sprint_D6-Gestión_de_Claves-success)
+
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-59%20passed-brightgreen?logo=pytest)
+![Security](https://img.shields.io/badge/Security-Argon2id%20%7C%20AES--GCM--256%20%7C%20Ed25519-blueviolet?logo=shield)
+
+*Bóveda criptográfica para cifrar, firmar y compartir archivos de forma segura.*
+
+</div>
+
+---
+
+## Tabla de Contenidos
+
+- [Equipo](#equipo)
+- [Stack Tecnológico](#stack-tecnológico)
+- [Documentación Técnica](#documentación-técnica)
+- [Inicio Rápido](#inicio-rápido)
+- [Ejemplo Completo](#ejemplo-completo)
+- [Flujo de Uso](#flujo-de-uso)
+- [Estructura del Proyecto](#estructura-del-proyecto)
+- [Supuestos de Seguridad](#supuestos-de-seguridad)
+- [Limitaciones Conocidas](#limitaciones-conocidas)
+
+---
+
+## 👥 Equipo
 
 | Integrante | Rol |
 |-----------|-----|
@@ -18,7 +45,35 @@
 
 ---
 
-## Inicio Rápido
+## 🛠️ Stack Tecnológico
+
+| | Tecnología | Versión | Uso |
+|---|---|---|---|
+|  | Python | 3.10+ | Runtime principal |
+|  | cryptography (PyCA) | ≥ 42.0.0 | AES-GCM-256, RSA-OAEP, Ed25519, scrypt |
+|  | argon2-cffi | ≥ 21.0.0 | KDF Argon2id para claves privadas en reposo |
+|  | pytest | ≥ 8.0.0 | Suite de pruebas (59 tests) |
+|  | hypothesis | ≥ 6.0.0 | Property-based testing |
+
+---
+
+## 📚 Documentación Técnica
+
+| Documento | Descripción | Fase |
+|-----------|-------------|------|
+| [Architecture & Threat Model](docs/architecture_threat_model.md) | Visión general, diagrama de arquitectura, requisitos RS-1 a RS-9, adversarios A1–A5, supuestos de confianza y restricciones de diseño. | D1 |
+| [Diseño de Cifrado Base](docs/encryption_design.md) | AES-GCM-256, estrategia de nonce y prevención de ataques de oráculo de padding. | D2 |
+| [Diseño de Cifrado Híbrido](docs/hybrid_encryption_design.md) | Fingerprints SHA-256 en DER, envoltura RSA-OAEP y protección de metadatos en AAD. | D3 |
+| [Revisión de Arquitectura](docs/presentacion_d4.pdf) | Material de auditoría de seguridad — modelo de amenazas y diagramas de flujo. | D4 |
+| [Diseño de Firmas Digitales](docs/signature_design.md) | Ed25519, verificación previa al descifrado y prevención de ataques de contexto. | D5 |
+| [Gestión de Claves](docs/D6_gestion_claves.md) | Argon2id, formato `.keystore`, estrategia de respaldo/restauración. | D6 |
+| [Canonicalization Strategy](docs/CANONICALIZATION.md) | Especificación de serialización canónica JSON usada como AAD y material firmable. | Transversal |
+| [Vulnerabilidad 1 — Claves en texto claro](docs/vulnerabilidad1.md) | Hallazgo de auditoría: claves privadas almacenadas sin cifrar. Análisis y mitigación. | D4 |
+| [Vulnerabilidad 2](docs/vulnerabilidad2.md) | Hallazgo de auditoría: segunda vulnerabilidad identificada. Análisis y mitigación. | D4 |
+
+---
+
+##  Inicio Rápido
 
 ### Prerrequisitos
 
@@ -39,488 +94,163 @@ python -m venv .venv
 
 # Instalar dependencias
 pip install -r requirements.txt
-```
 
-### Uso (CLI)
-
-```bash
-# 1. Generar pares de llaves (Curva Elíptica / RSA)
-python main.py identidad alice
-python main.py identidad bob
-
-# 2. Generar llaves para firma Ed25519 del remitente
-python main.py identidad-firma alice
-
-# 3. Cifrar un archivo (Cifrado Híbrido Multidestinatario)
-python main.py cifrar documento.txt documento.vault --publicas alice_public.pem bob_public.pem
-
-# 3.1 Cifrar y Firmar digitalmente (Autenticación de origen)
-python main.py cifrar documento.txt documento.vault --publicas alice_public.pem bob_public.pem --firma-privada alice_signing_private.pem
-
-# 4. Descifrar sin verificar firma
-python main.py descifrar documento.vault recuperado.txt --privada alice_private.pem
-
-# 4.1 Descifrar y Verificar firma (Protección total)
-python main.py descifrar documento.vault recuperado.txt --privada alice_private.pem --firma-publica alice_signing_public.pem
-
-# Ejecutar suite de pruebas completa
+# Verificar que todo funciona
 python -m pytest tests/ -v
+```
 
 ---
+
+##  Ejemplo Completo
+
+El flujo completo va de identidad → cifrar → descifrar. Cada paso es independiente y puede realizarse en máquinas distintas.
+
+```bash
+# 1. Alice y Bob generan sus identidades (una sola vez)
+python main.py identidad alice
+python main.py identidad bob
+python main.py identidad-firma alice        # para firmar digitalmente
+
+# 2. Alice cifra y firma un documento para ambos
+python main.py cifrar contrato.pdf contrato.vault \
+    --publicas alice_public.pem bob_public.pem \
+    --firma-privada alice_signing_private.keystore
+
+# 3. Bob recibe el .vault y descifra, verificando que fue Alice quien lo envió
+python main.py descifrar contrato.vault contrato_recuperado.pdf \
+    --privada bob_private.keystore \
+    --firma-publica alice_signing_public.pem
+
+# 4. Alice también puede descifrar su propia copia
+python main.py descifrar contrato.vault contrato_alice.pdf \
+    --privada alice_private.keystore \
+    --firma-publica alice_signing_public.pem
 ```
 
-## Estructura del Proyecto
+> ✅ El contenido descifrado es idéntico al original. La firma garantiza que nadie modificó el archivo en tránsito.
+
+---
+
+## 📖 Flujo de Uso
+
+### Paso 1 — Generar identidades
+
+| Paso | Comando | Archivos generados |
+|------|---------|-------------------|
+| Identidad RSA (cifrado) | `python main.py identidad alice` | `alice_private.keystore` 🔒 · `alice_public.pem` |
+| Identidad RSA (cifrado) | `python main.py identidad bob` | `bob_private.keystore` 🔒 · `bob_public.pem` |
+| Identidad Ed25519 (firma) | `python main.py identidad-firma alice` | `alice_signing_private.keystore` 🔒 · `alice_signing_public.pem` |
+
+> 🔒 Los archivos `.keystore` están cifrados con contraseña usando Argon2id + AES-256-GCM. La contraseña se solicita en terminal y nunca se almacena.
+
+### Paso 2 — Cifrar un archivo
+
+```bash
+# Cifrar para múltiples destinatarios
+python main.py cifrar documento.txt documento.vault \
+    --publicas alice_public.pem bob_public.pem
+
+# Cifrar y firmar digitalmente (autenticación de origen)
+python main.py cifrar documento.txt documento.vault \
+    --publicas alice_public.pem bob_public.pem \
+    --firma-privada alice_signing_private.keystore
+```
+
+### Paso 3 — Descifrar un archivo
+
+```bash
+# Descifrar (solicita contraseña maestra del .keystore)
+python main.py descifrar documento.vault recuperado.txt \
+    --privada alice_private.keystore
+
+# Descifrar y verificar firma (protección total)
+python main.py descifrar documento.vault recuperado.txt \
+    --privada alice_private.keystore \
+    --firma-publica alice_signing_public.pem
+```
+
+### Paso 4 — Respaldar y restaurar claves
+
+```bash
+# Respaldar keystore (ya está cifrado, se puede copiar libremente)
+python main.py respaldar alice /ruta/segura/alice_private.keystore
+python main.py respaldar alice /ruta/segura/alice_signing_private.keystore --tipo ed25519
+
+# Restaurar desde respaldo (verifica contraseña antes de restaurar)
+python main.py restaurar /ruta/respaldo/alice_private.keystore
+```
+
+### Referencia de archivos del sistema
+
+| Archivo | Tipo | Descripción |
+|---------|------|-------------|
+| `{usuario}_private.keystore` | 🔒 Privado cifrado | Clave RSA protegida con contraseña |
+| `{usuario}_public.pem` | 🌐 Público | Clave RSA pública — distribuible libremente |
+| `{usuario}_signing_private.keystore` | 🔒 Privado cifrado | Clave Ed25519 protegida con contraseña |
+| `{usuario}_signing_public.pem` | 🌐 Público | Clave Ed25519 pública — distribuible libremente |
+| `{archivo}.vault` | 📦 Contenedor | Archivo cifrado con AES-GCM-256 + firma opcional |
+
+---
+
+## 📁 Estructura del Proyecto
 
 ```
 ProyectoCriptografia/
-├── vault/                      # Módulo criptográfico principal
+├── vault/                           # Módulo criptográfico principal
 │   └── crypto/
 │       ├── __init__.py
-│       ├── encryption.py       # Motor de cifrado: AES-GCM (D2), Híbrido (D3) y Firmas (D5)
-│       └── keys_manager.py     # Gestión de identidades: RSA-2048 y Ed25519
+│       ├── encryption.py            # AES-GCM (D2), RSA-OAEP (D3), Ed25519 (D5)
+│       └── keys_manager.py          # Generación, cifrado en reposo y backup (D6)
+│
 ├── tests/
-│   ├── test_encryption.py      # Tests unitarios (Motor Simétrico D2)
-│   └── test_hybrid.py          # Tests unitarios (Híbrido, Metadatos y Accesos D3)
+│   └── test_encryption.py           # Suite completa: 59 tests — D2, D3, D5 y D6
 │
 ├── docs/
-│   ├── encryption_design.md    # Diseño criptográfico base (D2)
-│   ├── hybrid_design.md        # Diseño de compartición segura y Fingerprints (D3)
-│   ├── signature_design.md     # Diseño de la firma y desiciones de seguridad (D5)
-│   └── presentacion_d4.pdf     # Diapositivas de la auditoría de seguridad (D4)
-├── main.py                     # Interfaz de línea de comandos (CLI)
-├── requirements.txt            # Dependencias: cryptography, pytest
-├── diagrama.png                # Diagrama de arquitectura del sistema
+│   ├── architecture_threat_model.md # Arquitectura, amenazas y requisitos RS-1..RS-9 (D1)
+│   ├── encryption_design.md         # AES-GCM-256, nonce, AAD (D2)
+│   ├── hybrid_encryption_design.md  # Cifrado híbrido, fingerprints, multi-destinatario (D3)
+│   ├── signature_design.md          # Firmas Ed25519, verificación previa (D5)
+│   ├── D6_gestion_claves.md         # Argon2id, .keystore, backup/restore (D6)
+│   ├── CANONICALIZATION.md          # Estrategia de serialización canónica JSON (AAD)
+│   ├── vulnerabilidad1.md           # Hallazgo D4: claves privadas en texto claro
+│   ├── vulnerabilidad2.md           # Hallazgo D4: segunda vulnerabilidad identificada
+│   └── presentacion_d4.pdf          # Auditoría de seguridad (D4)
+│
+├── main.py                          # CLI — dispatcher de todos los comandos
+├── requirements.txt                 # cryptography, pytest, argon2-cffi, hypothesis
+├── diagrama.png                     # Diagrama de arquitectura
 └── README.md
 ```
----
-
-## Documentación Técnica
-
-| Documento | Descripción | Fase |
-|-----------|-------------|------|
-| [Diseño de Cifrado Base](docs/encryption_design.md) | Arquitectura AES-GCM-256, estrategia de nonce, vector de inicialización y prevención de ataques de oráculo de padding. | D2 |
-| [Diseño de Cifrado Híbrido](docs/hybrid_design.md) | Implementación de derivación de *Fingerprints* con SHA-256 en formato DER, envoltura de llaves y protección estricta de metadatos en el AAD. | D3 |
-| [Revisión de Arquitectura](docs/presentacion_d4.pdf) | Material de apoyo visual, modelo de amenazas y diagrama de flujo utilizado para la auditoría de seguridad. | D4 |
-| [Diseño de Firmas Digitales](docs/signature_design.md) | Integración de algoritmos Ed25519, flujo de verificación previa y prevención de ataques de manipulación de contexto. | D5 |
----
-
-## Arquitectura y modelo de amenazas
 
 ---
 
-## 1. Visión General del Sistema
+## 🔒 Supuestos de Seguridad
 
-### ¿Qué problema resuelve este vault?
+El sistema opera bajo los siguientes supuestos. Si alguno se viola, las garantías de seguridad pueden no mantenerse:
 
-El **Secure Digital Document Vault** aborda la vulnerabilidad inherente en el intercambio de archivos digitales sobre canales inseguros y el almacenamiento en reposo no confiable. Nuestra propuesta resuelve el problema de la gestión de secretos, eliminando la dependencia de la confianza en el proveedor de almacenamiento y mitigando errores humanos comunes en la gestión manual de claves:
+| Supuesto | Impacto si se viola |
+|----------|---------------------|
+| El usuario elige una contraseña fuerte y la mantiene secreta | Un atacante con la contraseña puede descifrar el `.keystore` y obtener la clave privada |
+| Las claves públicas de los destinatarios son auténticas | Un atacante podría suplantar a un destinatario y descifrar archivos dirigidos a él |
+| El binario de la aplicación no ha sido modificado | Un atacante podría filtrar claves o contraseñas en tiempo de ejecución |
+| Todo almacenamiento persistente es no confiable | Por eso todos los datos sensibles se cifran antes de escribirse en disco |
+| La memoria del proceso está protegida por el OS durante la ejecución | Un atacante con acceso a la memoria podría extraer claves en texto plano |
+| El usuario es responsable de respaldar su `.keystore` | La pérdida del archivo o la contraseña resulta en pérdida permanente de acceso |
 
-- Solo los destinatarios autorizados puedan acceder al contenido
-- El contenido no pueda ser modificado sin detección
-- El origen del documento pueda ser verificado de manera confiable
-- Las claves privadas de los usuarios estén protegidas incluso si el dispositivo es comprometido
-
-### Características principales
-
-####  Cifrado de archivos
-Proceso mediante el cual los documentos se transforman en datos ilegibles para terceros no autorizados, utilizando algoritmos criptográficos avanzados que aseguran confidencialidad y resistencia frente a intentos de descifrado no autorizados.
-
-####  Compartición segura
-Mecanismo que permite distribuir archivos cifrados únicamente a destinatarios previamente seleccionados, garantizando que solo ellos puedan acceder al contenido mediante claves o credenciales específicas, evitando filtraciones o accesos indebidos.
-
-####  Firma digital
-Técnica criptográfica que vincula de manera única al autor con el documento, proporcionando evidencia verificable de autenticidad y asegurando que el contenido no ha sido alterado desde su firma, además de ofrecer protección contra el repudio.
-
-####  Gestión de claves
-Conjunto de procedimientos que abarcan la creación, almacenamiento seguro, distribución controlada y eventual renovación de claves criptográficas, asegurando que estas permanezcan protegidas y disponibles únicamente para usuarios autorizados.
-
-####  Verificación de integridad
-Método de comprobación que valida que los documentos no han sufrido modificaciones, mediante el uso de funciones hash o sumas de verificación, garantizando que el contenido recibido es idéntico al original.
-
-####  Control de acceso y auditoría
-Sistema que define permisos específicos para cada usuario o grupo, regulando acciones como lectura, edición o eliminación, acompañado de registros detallados de todas las operaciones realizadas para asegurar trazabilidad y cumplimiento normativo.
+> El detalle completo de supuestos, adversarios y restricciones de diseño está en [Architecture & Threat Model](docs/architecture_threat_model.md).
 
 ---
 
-### Fuera del Alcance
-
-Los siguientes elementos **NO** forman parte del sistema:
-
-| Elemento | Razón |
-|----------|-------|
-| **Almacenamiento en la nube o servidor centralizado** | Requiere infraestructura adicional y gestión de disponibilidad, lo cual excede el objetivo de protección documental. |
-| **Sistema de mensajería en tiempo real** | Implica comunicación instantánea y sincronización continua, lo cual no corresponde al enfoque de seguridad de archivos. |
-| **Revocación de acceso a documentos ya compartidos** | Demanda un control dinámico posterior a la distribución, lo que requiere arquitecturas más complejas de gestión de derechos digitales. |
-| **Versionamiento de documentos** | Implica mantener múltiples estados históricos de un archivo, lo cual pertenece a sistemas de gestión documental más amplios. |
-| **Sincronización automática entre dispositivos** | Requiere integración con múltiples plataformas y servicios, lo que añade complejidad operativa fuera del objetivo principal. |
-| **Disponibilidad y resistencia a ataques DoS** | Corresponde a medidas de infraestructura y seguridad de red, más relacionadas con servidores que con documentos cifrados. |
-| **Anonimato de red** | Involucra técnicas de ocultamiento de identidad en la comunicación, lo cual pertenece al ámbito de privacidad en redes y no al manejo de archivos. |
-| **Ocultar la existencia del archivo** | Implica técnicas de esteganografía o disimulación, que van más allá de la protección mediante cifrado y gestión de claves. |
-| **Recuperación de contraseñas olvidadas** | Requiere mecanismos adicionales de gestión de credenciales y políticas de soporte al usuario, lo cual no es parte del alcance definido. |
-| **Gestión de archivos digitales una vez cifrado** | Corresponde a sistemas de administración documental posteriores al cifrado, como organización, clasificación o eliminación. |
-
----
-
-## 2. Diagrama de Arquitectura
-
-### Descripción del Flujo Operativo
-
-El diagrama de arquitectura ilustra el flujo operativo de la Bóveda Segura de Documentos Digitales, estableciendo una separación estricta entre los **componentes de confianza**, alojados en el lado del cliente, y los **componentes no confiables**, correspondientes a la red y al almacenamiento remoto.
-
-####  Proceso de Emisión (Cifrado)
-
-El proceso de emisión inicia cuando el usuario proporciona:
-- Su **contraseña**
-- El **archivo en texto claro**
-- La **selección del destinatario**
-
-**Flujo detallado:**
-
-1. **Desbloqueo del Key Store**
-   - La contraseña es procesada mediante una función de derivación de claves (**KDF**)
-   - Se desbloquea el Key Store local
-   - Se extrae de manera segura la clave privada del remitente en memoria temporal
-
-2. **Cifrado del Archivo**
-   - El sistema genera una clave simétrica aleatoria y única para el documento
-   - Se emplea un esquema de cifrado autenticado (**AEAD**) para transformar el archivo original
-   - Se garantiza tanto confidencialidad como integridad
-
-3. **Envolvimiento de Clave**
-   - La clave simétrica es "envuelta" mediante cifrado asimétrico
-   - Se utiliza la clave pública del receptor
-   - Solo el destinatario autorizado podrá acceder a la información
-
-4. **Firma Digital**
-   - El sistema calcula una firma digital utilizando la clave privada del remitente
-   - Se dota al paquete de evidencia criptográfica para el no repudio
-   - Se valida la autenticidad del emisor
-
-5. **Ensamblaje del Contenedor**
-   - Todos los elementos se consolidan en un contenedor único:
-     - Archivo cifrado
-     - Claves envueltas
-     - Metadatos
-     - Firma digital
-   - Se estructura dentro del entorno seguro del cliente
-
-####  Transmisión Segura
-
-Una vez ensamblado, el contenedor es transmitido a través de un canal de red seguro (mediante **TLS/SSL**) hacia el servidor backend. El entorno remoto (API y base de datos central) asume un **modelo de almacenamiento no confiable**. El servidor actúa exclusivamente como un repositorio inerte de los contenedores cifrados y del almacén de claves públicas, careciendo por completo de la capacidad para leer el contenido de los archivos o extraer las claves simétricas.
-
-####  Proceso de Recuperación (Descifrado)
-
-El modelo detalla el flujo de recuperación y verificación ejecutado por el destinatario:
-
-1. **Descarga del Contenedor**
-   - El destinatario descarga el contenedor desde el almacenamiento remoto
-
-2. **Verificación de Firma**
-   - La aplicación ejecuta una validación de la firma digital **ANTES** de cualquier manipulación
-   - ❌ Si la firma es inválida → proceso se detiene inmediatamente
-   - ✅ Si la firma es válida → continúa el proceso
-
-3. **Desenvolvimiento de Clave**
-   - El sistema desenvuelve la clave simétrica
-   - Utiliza la clave privada del receptor (desbloqueada previamente con su contraseña)
-
-4. **Descifrado del Archivo**
-   - Se emplea la clave simétrica recuperada para revertir el proceso AEAD
-   - Se descifra el archivo original
-   - Se entrega al usuario de forma íntegra dentro de su dispositivo local
-
----
-
-###  Diagrama Visual
-![Arquitectura del sistema](diagrama.png)
-
----
-
-## 3. Requisitos de Seguridad
-
-Para los requisitos de seguridad se tienen las siguientes propiedades:
-
-### RS-1: Confidencialidad del contenido del archivo
-**Descripción:** Un atacante que obtenga el contenedor cifrado no debe poder conocer el contenido del archivo sin poseer la clave privada correspondiente del destinatario autorizado.
-
-### RS-2: Integridad del contenido del archivo
-**Descripción:** Cualquier modificación al contenido cifrado del archivo debe ser detectada durante el proceso de descifrado, resultando en el rechazo del archivo.
-
-### RS-3: Autenticidad del remitente
-**Descripción:** Un destinatario debe poder verificar de manera criptográfica que el archivo fue creado y firmado por el remitente declarado y no por un impostor.
-
-### RS-4: Confidencialidad de las claves privadas
-**Descripción:** Las claves privadas almacenadas en el sistema deben estar protegidas mediante derivación de clave basada en contraseña (KDF). Un atacante con acceso al Key Store no debe poder extraer las claves privadas sin conocer la contraseña del usuario.
-
-### RS-5: Protección contra manipulación
-**Descripción:** Cualquier alteración de los metadatos del contenedor cifrado (incluyendo las claves envueltas, la firma digital o los identificadores de destinatarios) debe ser detectable e invalidar el archivo completo.
-
-### RS-6: No repudio
-**Descripción:** El remitente no debe poder negar haber creado y firmado un documento, ya que la firma digital proporciona evidencia criptográfica de autoría.
-
-### RS-7: Separación de claves por archivo
-**Descripción:** Cada archivo debe ser cifrado con una clave simétrica única e independiente. El compromiso de una clave de archivo no debe comprometer otros archivos.
-
-### RS-8: Confidencialidad de claves simétricas de archivo
-**Descripción:** Las claves simétricas utilizadas para cifrar archivos individuales no deben ser almacenadas en texto plano. Deben estar protegidas mediante envolvimiento con las claves públicas de los destinatarios.
-
----
-
-## 4. Modelo de Amenazas
-
-### 4.1 Activos a Proteger
-
-| Activo | Criticidad | Descripción |
-|--------|-----------|-------------|
-| **Contenido de archivos** |  Alta | El contenido original de los documentos que se comparten |
-| **Claves privadas de usuarios** |  **Crítica** | Las claves que permiten descifrar archivos y firmar documentos |
-| **Claves simétricas de archivos** |  Alta | Claves únicas generadas para cifrar cada archivo |
-| **Contraseñas de usuarios** |  **Crítica** | Credenciales utilizadas para claves de protección del Key Store |
-| **Validez de firmas digitales** |  Alta | La confianza en que un documento proviene del remitente declarado |
-| **Metadatos de archivos** |  Media | Información como nombre de archivo, tamaño, fecha, destinatarios |
-| **Integridad del contenedor** |  Alta | La estructura completa que contiene archivo cifrado + claves + firma |
-
----
-
-### 4.2 Adversarios
-
-Se detalla una lista de los adversarios que tenemos que considerar:
-
-####  Adversario A1: Atacante Externo con Acceso a Almacenamiento
-
-**Objetivo:** Descifrar el contenido de los archivos o extraer información sensible de los metadatos.
-
-**Capacidades:**
-- ✅ Puede leer todos los contenedores cifrados almacenados
-- ✅ Puede copiar archivos del sistema de almacenamiento
-- ❌ NO tiene acceso a las claves privadas de los usuarios
-- ❌ NO conoce las contraseñas de los usuarios
-- ❌ NO tiene acceso a la memoria de la aplicación en ejecución
-
----
-
-####  Adversario A2: Destinatario Malicioso
-
-**Objetivo:** Manipular archivos para que parezcan venir de otro remitente, o modificar contenido sin detección.
-
-**Capacidades:**
-- ✅ Tiene acceso legítimo a su propia clave privada
-- ✅ Puede descifrar archivos que le fueron compartidos
-- ✅ Puede intentar modificar archivos o metadatos
-- ✅ Puede intentar suplantar al remitente original
-- ❌ NO tiene acceso a las claves privadas de otros usuarios
-
----
-
-####  Adversario A3: Atacante Man-in-the-Middle
-
-**Objetivo:** Causar que el destinatario acepte un archivo modificado como válido.
-
-**Capacidades:**
-- ✅ Puede interceptar y modificar contenedores antes de que lleguen al destinatario
-- ✅ Puede alterar bytes del archivo cifrado
-- ✅ Puede modificar metadatos, claves envueltas o firmas
-- ❌ NO puede generar firmas válidas sin la clave privada del remitente
-
----
-
-####  Adversario A4: Atacante con Acceso Temporal al Dispositivo
-
-**Objetivo:** Extraer claves privadas para uso futuro.
-
-**Capacidades:**
-- ✅ Tiene acceso físico breve al dispositivo del usuario (por ejemplo, dispositivo desbloqueado y desatendido)
-- ✅ Puede copiar el Key Store cifrado
-- ✅ Puede intentar extraer claves de la memoria
-- ❌ NO conoce la contraseña del usuario
-- ❌ NO tiene acceso prolongado para realizar ataques sofisticados
-
----
-
-####  Adversario A5: Atacante con Capacidad de Fuerza Bruta
-
-**Objetivo:** Descifrar el Key Store mediante adivinación de contraseña.
-
-**Capacidades:**
-- ✅ Tiene recursos computacionales significativos
-- ✅ Puede realizar ataques de diccionario contra contraseñas
-- ✅ Puede intentar ataques de fuerza bruta offline contra el Key Store
-- ❌ NO puede comprometer los algoritmos criptográficos fundamentales (AES, RSA, etc.)
-
----
-
-## 5. Supuestos de Confianza
-
->  El sistema asume que las siguientes condiciones son verdaderas. **Si alguno de estos supuestos es violado, las garantías de seguridad pueden no mantenerse.**
-
-### 1️ Protección de Contraseñas por el Usuario
-
-**Supuesto:** Los usuarios eligen contraseñas suficientemente fuertes y las mantienen secretas. No comparten sus contraseñas ni las almacenan de manera insegura.
-
-**Impacto si se viola:** Un atacante con la contraseña puede descifrar el Key Store y obtener todas las claves privadas del usuario.
-
----
-
-### 2️ Autenticidad de Claves Públicas
-
-**Supuesto:** Las claves públicas de los destinatarios son auténticas y han sido obtenidas mediante un canal confiable. Los usuarios verifican las claves públicas antes de compartir archivos sensibles.
-
-**Impacto si se viola:** Un atacante podría suplantar a un destinatario y descifrar archivos destinados a ese usuario.
-
----
-
-### 3️ Integridad de la Aplicación Vault
-
-**Supuesto:** El binario de la aplicación Vault no ha sido modificado por un atacante. Los usuarios obtienen la aplicación de fuentes confiables.
-
-**Impacto si se viola:** Un atacante podría modificar la aplicación para filtrar claves, contraseñas o contenido de archivos.
-
----
-
-### 4️ Almacenamiento No Confiable
-
-**Supuesto:** Todo almacenamiento persistente (sistema de archivos local, almacenamiento externo) es considerado no confiable. Los atacantes pueden tener acceso de lectura a estos almacenamientos.
-
-**Consecuencia de diseño:** Por esto, todos los datos sensibles se cifran antes del almacenamiento.
-
----
-
-### 5️ Memoria Segura Durante Ejecución
-
-**Supuesto:** Mientras la aplicación está en ejecución, la memoria del proceso está protegida por el sistema operativo contra acceso no autorizado de otros procesos.
-
-**Impacto si se viola:** Un atacante con acceso a la memoria del proceso podría extraer claves o contraseñas en texto plano.
-
----
-
-### 6️ Disponibilidad de Claves Privadas para Recuperación
-
-**Supuesto:** Los usuarios son responsables de hacer respaldo de su Key Store cifrado. El sistema no proporciona recuperación de claves si se pierde el Key Store o la contraseña.
-
-**Consecuencia:** La pérdida de la contraseña o del Key Store resulta en pérdida permanente de acceso a todos los archivos cifrados.
-
----
-
-### 7️ Uso Apropiado del Sistema
-
-**Supuesto:** Los usuarios utilizan el sistema según lo diseñado y siguen las mejores prácticas (por ejemplo, no compartir archivos con destinatarios no confiables, verificar firmas antes de confiar en el contenido).
-
-**Impacto si se viola:** Errores del usuario pueden resultar en exposición de información o aceptación de contenido malicioso.
-
-
-### RS-9: Verificación antes del descifrado
-**Descripción:** La firma digital debe ser verificada **ANTES** de intentar descifrar cualquier contenido. Si la verificación falla, el proceso debe detenerse inmediatamente sin revelar información sobre el contenido.
-
----
-
-## 6. Revisión de Superficie de Ataque
-
-### 6.1 Entrada de Archivos
-
-**¿Qué hace el sistema?**  
-La aplicación lee archivos del disco del usuario para cifrarlos.
-
-**¿Qué puede salir mal?**
-- **Archivos demasiado grandes:** Un archivo de 50 GB podría consumir toda la memoria RAM y crashear la aplicación.
-- **Nombres de archivo maliciosos:** Un archivo llamado `../../etc/passwd` o con caracteres especiales raros podría causar problemas al procesar rutas o al guardar el contenedor cifrado.
-- **Archivos corruptos o malformados:** Aunque solo ciframos el contenido sin parsearlo, archivos con estructuras extrañas podrían revelar bugs en nuestro código.
-
-**¿Qué propiedad de seguridad está en riesgo?**  
-Principalmente la **disponibilidad del sistema**.
-
----
-
-### 6.2 Parsing de Metadatos del Contenedor
-
-**¿Qué hace el sistema?**  
-Cuando desciframos un archivo, primero leemos el contenedor cifrado que incluye metadatos en cierto formato (destinatarios, claves envueltas, firma, etc.).
-
-**¿Qué puede salir mal?**
-- **JSON malformado:** Un contenedor con JSON inválido podría hacer que el parser falle y crashee la aplicación.
-- **Metadatos gigantes:** Un atacante podría crear un contenedor con un campo de 1 GB para causar agotamiento de memoria.
-- **Campos inesperados:** JSON con estructuras que no esperamos podría causar comportamiento indefinido si no validamos.
-
-**¿Qué propiedad de seguridad está en riesgo?**  
-La **integridad y disponibilidad** del sistema.
-
----
-
-### 6.3 Importación y Exportación de Claves
-
-**¿Qué hace el sistema?**  
-Los usuarios pueden importar claves públicas de otras personas y exportar su propia clave pública.
-
-**¿Qué puede salir mal?**
-- Claves públicas inválidas
-- Sustitución de clave pública
-- Exportar clave privada por error
-
-**¿Qué propiedad de seguridad está en riesgo?**  
-**Confidencialidad** y **autenticidad**.
-
----
-
-### 6.4 Manejo de Contraseñas
-
-**¿Qué puede salir mal?**
-- Contraseñas débiles
-- Contraseña visible en terminal
-- Contraseña en memoria por mucho tiempo
-
-**¿Qué propiedad de seguridad está en riesgo?**  
-**Confidencialidad de las claves privadas**.
-
----
-
-### 6.5 Selección de Destinatarios al Compartir
-
-**¿Qué puede salir mal?**
-- Destinatario equivocado
-- Clave pública faltante
-- Confusión entre usuarios
-
-**¿Qué propiedad de seguridad está en riesgo?**  
-**Confidencialidad**.
-
----
-
-### 6.6 Verificación de Firma Digital
-
-**¿Qué puede salir mal?**
-- Verificación omitida
-- Verificar después de descifrar
-- Clave pública incorrecta
-
-**¿Qué propiedad de seguridad está en riesgo?**  
-**Autenticidad del remitente**.
-
----
-
-### 6.7 Interfaz de Línea de Comandos (CLI)
-
-**¿Qué puede salir mal?**
-- Inyección de comandos
-- Path traversal
-- Argumentos contradictorios
-
-**¿Qué propiedad de seguridad está en riesgo?**  
-**Integridad del sistema** y **confidencialidad**.
-
----
-
-## 7. Restricciones de Diseño Derivadas de Requisitos
-
-| Requisito de Seguridad | Restricción de Diseño | Justificación |
-|------------------------|----------------------|---------------|
-| RS-1 Confidencialidad | Usar cifrado autenticado AEAD | Evita ataques de padding |
-| RS-2 Integridad | Usar AEAD | Detecta modificaciones |
-| RS-3 Autenticidad | Firmas digitales | Solo la clave privada genera firma válida |
-| RS-4 Claves privadas | Cifrar Key Store con KDF | Resiste fuerza bruta |
-| RS-5 Manipulación | Incluir metadatos en firma o AEAD | Detecta cambios |
-| RS-6 No repudio | Firmas del remitente | Evidencia criptográfica |
-| RS-7 Separación de claves | Nueva clave por archivo | Limita impacto |
-| RS-8 Claves simétricas | Cifrado híbrido | Solo destinatarios autorizados |
-| RS-9 Verificación previa | Verificar firma antes de descifrar | Defensa en profundidad |
-| Almacenamiento no confiable | No guardar datos sensibles en claro | Supone atacante con lectura |
-| Manejo de nonces | Nonce único por operación | Evita romper AEAD |
-| Múltiples destinatarios | Envolver clave por destinatario | Permite acceso independiente |
-| Backup y recuperación | Exportar Key Store cifrado | Evita pérdida permanente |
+## ⚠️ Limitaciones Conocidas
+
+| Limitación | Descripción |
+|------------|-------------|
+| **Contraseña débil** | Si el usuario elige una contraseña corta, Argon2id ralentiza los ataques pero no los hace imposibles. El sistema advierte pero no bloquea. |
+| **Clave en memoria durante operación** | Mientras se descifra, la clave privada existe en memoria. Un atacante con acceso al proceso podría extraerla. Mitigación solo por software está fuera del alcance. |
+| **Sin revocación de claves** | No existe mecanismo para invalidar una clave comprometida. El procedimiento manual es generar un nuevo par y re-cifrar los archivos. |
+| **Sin recuperación de contraseña** | Si se pierde la contraseña maestra, la clave privada es irrecuperable. No hay mecanismo de reset. |
+| **Claves públicas sin PKI** | No hay infraestructura de clave pública. La autenticidad de las claves públicas depende de que el usuario las obtenga por un canal confiable. |
+| **Sin transporte de red** | El sistema opera localmente. El intercambio de archivos `.vault` y claves públicas entre usuarios se hace fuera del sistema. |
+| **Archivos grandes en memoria** | El archivo completo se carga en RAM para cifrarlo. Archivos muy grandes (>1 GB) pueden causar problemas de memoria. |
+
+> El análisis detallado de vulnerabilidades identificadas en auditoría está en [vulnerabilidad1.md](docs/vulnerabilidad1.md) y [vulnerabilidad2.md](docs/vulnerabilidad2.md).
