@@ -11,8 +11,8 @@ router = APIRouter()
 @router.post("/descifrar")
 async def descifrar(
     archivo: UploadFile = File(...),
-    privada: str = Form(...),
-    password: str = Form(...),
+    keystore: str = Form(...),         # contenido JSON del .keystore
+    password: str = Form(...),         # contraseña como string
     firma_publica: Optional[str] = Form(None)
 ):
     try:
@@ -21,9 +21,10 @@ async def descifrar(
             with open(vault_path, "wb") as f:
                 f.write(await archivo.read())
 
-            priv_path = os.path.join(tmpdir, "private.pem")
-            with open(priv_path, "w") as f:
-                f.write(privada)
+            # Guardar keystore como archivo .keystore
+            keystore_path = os.path.join(tmpdir, "private.keystore")
+            with open(keystore_path, "w") as f:
+                f.write(keystore)
 
             signing_path = None
             if firma_publica:
@@ -35,9 +36,9 @@ async def descifrar(
             output_path = os.path.join(tmpdir, original_name)
 
             decrypt_file_hybrid(
-                vault_path, output_path, priv_path,
+                vault_path, output_path, keystore_path,
                 signing_pub_path=signing_path,
-                password=password.encode("utf-8")
+                password=password        # str directo
             )
 
             with open(output_path, "rb") as f:
@@ -49,4 +50,4 @@ async def descifrar(
             headers={"Content-Disposition": f"attachment; filename={original_name}"}
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Descifrado fallido. Verifica el archivo, la llave, la contraseña y la firma.")
+        raise HTTPException(status_code=500, detail="Descifrado fallido. Verifica el archivo, el keystore, la contraseña y la firma.")

@@ -26,8 +26,8 @@ export default function Identidad() {
   const strength = getPasswordStrength(password)
   const isPasswordValid = strength >= 3
 
-  const download = (content, filename) => {
-    const blob = new Blob([content], { type: 'text/plain' })
+  const download = (content, filename, type = 'text/plain') => {
+    const blob = new Blob([content], { type })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
   }
@@ -38,7 +38,7 @@ export default function Identidad() {
     try {
       const { data } = await axios.post(`${API}/api/identidad`, { usuario, password })
       setResultado(data)
-      download(data.private_key, `${usuario}_private.pem`)
+      download(data.keystore, `${usuario}_private.keystore`, 'application/json')
     } catch (e) {
       setError(e.response?.data?.detail || 'Error al generar identidad')
     } finally { setLoading(false) }
@@ -112,10 +112,10 @@ export default function Identidad() {
 
           <div className="alert alert-warning">
             <span>⚠</span>
-            <p>Tu llave privada fue descargada automáticamente y está protegida con tu contraseña. Guárdala en un lugar seguro — no se puede recuperar.
+            <p>Tu keystore fue descargado automáticamente y está protegido con tu contraseña. Guárdalo en un lugar seguro — no se puede recuperar.
               <button className="btn btn-ghost" style={{marginTop:'0.5rem', display:'block'}}
-                onClick={() => download(resultado.private_key, `${usuario}_private.pem`)}>
-                ↓ Volver a descargar private.pem
+                onClick={() => download(resultado.keystore, `${usuario}_private.keystore`, 'application/json')}>
+                ↓ Volver a descargar private.keystore
               </button>
             </p>
           </div>

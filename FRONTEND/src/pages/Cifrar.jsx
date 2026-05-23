@@ -6,7 +6,7 @@ const API = 'http://127.0.0.1:8000'
 export default function Cifrar() {
   const [archivo, setArchivo] = useState(null)
   const [publicas, setPublicas] = useState([''])
-  const [firmaPrivada, setFirmaPrivada] = useState('')
+  const [firmaKeystore, setFirmaKeystore] = useState('')
   const [firmaPassword, setFirmaPassword] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -22,16 +22,16 @@ export default function Cifrar() {
     if (!archivo || publicas.some(p => !p.trim())) {
       setError('Selecciona un archivo y proporciona al menos una llave pública'); return
     }
-    if (firmaPrivada.trim() && !firmaPassword.trim()) {
-      setError('Proporciona la contraseña de tu llave de firma'); return
+    if (firmaKeystore.trim() && !firmaPassword.trim()) {
+      setError('Proporciona la contraseña de tu keystore de firma'); return
     }
     setLoading(true); setError(''); setSuccess('')
     try {
       const form = new FormData()
       form.append('archivo', archivo)
       publicas.forEach(p => form.append('publicas', p.trim()))
-      if (firmaPrivada.trim()) {
-        form.append('firma_privada', firmaPrivada.trim())
+      if (firmaKeystore.trim()) {
+        form.append('firma_keystore', firmaKeystore.trim())
         form.append('firma_password', firmaPassword.trim())
       }
 
@@ -83,14 +83,15 @@ export default function Cifrar() {
         <hr className="divider" />
 
         <div className="field">
-          <label>Llave privada de firma Ed25519 <span style={{color:'#334155'}}>(opcional)</span></label>
-          <textarea placeholder="-----BEGIN ENCRYPTED PRIVATE KEY-----..." value={firmaPrivada}
-            onChange={e => { setFirmaPrivada(e.target.value); if (!e.target.value) setFirmaPassword('') }} />
+          <label>Keystore de firma Ed25519 <span style={{color:'#334155'}}>(opcional)</span></label>
+          <textarea placeholder='{"encrypted_key": "...", "salt": "...", "kdf": "argon2id", ...}' 
+            value={firmaKeystore}
+            onChange={e => { setFirmaKeystore(e.target.value); if (!e.target.value) setFirmaPassword('') }} />
         </div>
 
-        {firmaPrivada.trim() && (
+        {firmaKeystore.trim() && (
           <div className="field">
-            <label>Contraseña de la llave de firma</label>
+            <label>Contraseña del keystore de firma</label>
             <input type="password" placeholder="Contraseña con que protegiste la llave"
               value={firmaPassword} onChange={e => setFirmaPassword(e.target.value)} />
           </div>

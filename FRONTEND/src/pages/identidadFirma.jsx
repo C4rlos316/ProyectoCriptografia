@@ -26,8 +26,8 @@ export default function IdentidadFirma() {
   const strength = getPasswordStrength(password)
   const isPasswordValid = strength >= 3
 
-  const download = (content, filename) => {
-    const blob = new Blob([content], { type: 'text/plain' })
+  const download = (content, filename, type = 'text/plain') => {
+    const blob = new Blob([content], { type })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
   }
@@ -38,7 +38,7 @@ export default function IdentidadFirma() {
     try {
       const { data } = await axios.post(`${API}/api/identidad-firma`, { usuario, password })
       setResultado(data)
-      download(data.signing_private_key, `${usuario}_signing_private.pem`)
+      download(data.signing_keystore, `${usuario}_signing_private.keystore`, 'application/json')
     } catch (e) {
       setError(e.response?.data?.detail || 'Error al generar llaves de firma')
     } finally { setLoading(false) }
@@ -112,10 +112,10 @@ export default function IdentidadFirma() {
 
           <div className="alert alert-warning">
             <span>⚠</span>
-            <p>Tu llave privada de firma fue descargada automáticamente y está protegida con tu contraseña. Guárdala en un lugar seguro — no se puede recuperar.
+            <p>Tu keystore de firma fue descargado automáticamente y está protegido con tu contraseña. Guárdalo en un lugar seguro — no se puede recuperar.
               <button className="btn btn-ghost" style={{marginTop:'0.5rem', display:'block'}}
-                onClick={() => download(resultado.signing_private_key, `${usuario}_signing_private.pem`)}>
-                ↓ Volver a descargar signing_private.pem
+                onClick={() => download(resultado.signing_keystore, `${usuario}_signing_private.keystore`, 'application/json')}>
+                ↓ Volver a descargar signing_private.keystore
               </button>
             </p>
           </div>

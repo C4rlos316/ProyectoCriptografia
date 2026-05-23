@@ -19,14 +19,15 @@ def crear_identidad(req: UsuarioRequest):
             os.chdir(tmpdir)
             generate_user_keys(req.usuario, req.password)
 
-            with open(f"{req.usuario}_private.pem") as f:
-                private = f.read()
+            with open(f"{req.usuario}_private.keystore") as f:
+                keystore = f.read()
             with open(f"{req.usuario}_public.pem") as f:
                 public = f.read()
 
             os.chdir(original_dir)
-            return {"private_key": private, "public_key": public}
+            return {"keystore": keystore, "public_key": public}
     except Exception as e:
+        os.chdir(original_dir) if 'original_dir' in locals() else None
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/identidad-firma")
@@ -37,12 +38,13 @@ def crear_identidad_firma(req: UsuarioRequest):
             os.chdir(tmpdir)
             generate_signing_keys(req.usuario, req.password)
 
-            with open(f"{req.usuario}_signing_private.pem") as f:
-                private = f.read()
+            with open(f"{req.usuario}_signing_private.keystore") as f:
+                keystore = f.read()
             with open(f"{req.usuario}_signing_public.pem") as f:
                 public = f.read()
 
             os.chdir(original_dir)
-            return {"signing_private_key": private, "signing_public_key": public}
+            return {"signing_keystore": keystore, "signing_public_key": public}
     except Exception as e:
+        os.chdir(original_dir) if 'original_dir' in locals() else None
         raise HTTPException(status_code=500, detail=str(e))
