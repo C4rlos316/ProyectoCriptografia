@@ -66,76 +66,143 @@ Los siguientes elementos **NO** forman parte del sistema:
 
 ## 2. Diagrama de Arquitectura
 
-### Descripción del Flujo Operativo
+### Modelo de operación
 
-El diagrama de arquitectura ilustra el flujo operativo de la Bóveda Segura de Documentos Digitales, estableciendo una separación estricta entre los **componentes de confianza**, alojados en el lado del cliente, y los **componentes no confiables**, correspondientes a la red y al almacenamiento remoto.
+El sistema es **completamente local**. . Todos los archivos — keystores, claves públicas y contenedores `.vault` — residen en el sistema de archivos del usuario. El intercambio de archivos entre usuarios enviar un `.vault` o compartir una clave pública ocurre fuera del sistema, por cualquier canal que el usuario elija como correo, USB, etc.
 
-####  Proceso de Emisión (Cifrado)
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     DISPOSITIVO DEL USUARIO                     │
+│                                                                 │
+│  main.py (CLI)                                                  │
+│      │                                                          │
+│      ├── vault/crypto/keys_manager.py   ← gestión de .keystore  │
+│      └── vault/crypto/encryption.py    ← cifrado / descifrado   │
+│                                                                 │
+│  Archivos en disco:                                             │
+│    {usuario}_private.keystore     ← clave RSA cifrada           │
+│    {usuario}_signing_private.keystore  ← clave Ed25519 cifrada  │
+│    {usuario}_public.pem           ← clave RSA pública           │
+│    {usuario}_signing_public.pem   ← clave Ed25519 pública       │
+│    {archivo}.vault                ← contenedor cifrado          │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-El proceso de emisión inicia cuando el usuario proporciona:
-- Su **contraseña**
-- El **archivo en texto claro**
-- La **selección del destinatario**
-
-**Flujo detallado:**
-
-1. **Desbloqueo del Key Store**
-   - La contraseña es procesada mediante una función de derivación de claves (**KDF**)
-   - Se desbloquea el Key Store local
-   - Se extrae de manera segura la clave privada del remitente en memoria temporal
-
-2. **Cifrado del Archivo**
-   - El sistema genera una clave simétrica aleatoria y única para el documento
-   - Se emplea un esquema de cifrado autenticado (**AEAD**) para transformar el archivo original
-   - Se garantiza tanto confidencialidad como integridad
-
-3. **Envolvimiento de Clave**
-   - La clave simétrica es "envuelta" mediante cifrado asimétrico
-   - Se utiliza la clave pública del receptor
-   - Solo el destinatario autorizado podrá acceder a la información
-
-4. **Firma Digital**
-   - El sistema calcula una firma digital utilizando la clave privada del remitente
-   - Se dota al paquete de evidencia criptográfica para el no repudio
-   - Se valida la autenticidad del emisor
-
-5. **Ensamblaje del Contenedor**
-   - Todos los elementos se consolidan en un contenedor único:
-     - Archivo cifrado
-     - Claves envueltas
-     - Metadatos
-     - Firma digital
-   - Se estructura dentro del entorno seguro del cliente
-
-####  Transmisión Segura
-
-Una vez ensamblado, el contenedor es transmitido a través de un canal de red seguro (mediante **TLS/SSL**) hacia el servidor backend. El entorno remoto (API y base de datos central) asume un **modelo de almacenamiento no confiable**. El servidor actúa exclusivamente como un repositorio inerte de los contenedores cifrados y del almacén de claves públicas, careciendo por completo de la capacidad para leer el contenido de los archivos o extraer las claves simétricas.
-
-####  Proceso de Recuperación (Descifrado)
-
-El modelo detalla el flujo de recuperación y verificación ejecutado por el destinatario:
-
-1. **Descarga del Contenedor**
-   - El destinatario descarga el contenedor desde el almacenamiento remoto
-
-2. **Verificación de Firma**
-   - La aplicación ejecuta una validación de la firma digital **ANTES** de cualquier manipulación
-   - ❌ Si la firma es inválida → proceso se detiene inmediatamente
-   - ✅ Si la firma es válida → continúa el proceso
-
-3. **Desenvolvimiento de Clave**
-   - El sistema desenvuelve la clave simétrica
-   - Utiliza la clave privada del receptor (desbloqueada previamente con su contraseña)
-
-4. **Descifrado del Archivo**
-   - Se emplea la clave simétrica recuperada para revertir el proceso AEAD
-   - Se descifra el archivo original
-   - Se entrega al usuario de forma íntegra dentro de su dispositivo local
+![Arquitectura del sistema](../arquitectura_general.png)
 
 ---
 
-###  Diagrama Visual
-![Arquitectura del sistema](../diagrama.png)
+### Flujo de Emisión (Cifrado)
+
+El remitente ejecuta `python main.py cifrar` con su archivo, las claves públicas de los destinatarios y opcionalmente su clave de firma.
+
+```
+Usuario
+  │
+  ├─ Proporciona: archivo.txt, alice_public.pem, bob_public.pem
+  │               [--firma-privada alice_signing_private.keystore]
+  │
+  ▼
+CLI solicita contraseña de firma
+  │
+  ▼
+keys_manager.load_private_key(alice_signing_private.keystore, password)
+  │  Argon2id(password, salt) → clave_derivada
+  │  PKCS8.decrypt(encrypted_key, clave_derivada) → Ed25519PrivKey (en memoria)
+  │
+  ▼
+encrypt_file_hybrid()
+  │
+  ├─ 1. Genera file_key AES-256 (os.urandom → CSPRNG del OS)
+  ├─ 2. Genera nonce 96-bit (os.urandom → único por operación)
+  │
+  ├─ 3. Para cada clave pública:
+  │       fingerprint = SHA-256(pub_key DER)[:32 hex]
+  │       encrypted_key = RSA-OAEP-SHA256(file_key, pub_key)
+  │
+  ├─ 4. Construye header:
+  │       { "filename": "...", "recipients": [sorted fingerprints], "version": "2.0" }
+  │
+  ├─ 5. AAD = canonical_json(header)   ← sort_keys, sin espacios, UTF-8
+  │
+  ├─ 6. ciphertext = AES-GCM-256.encrypt(plaintext, nonce, AAD)
+  │       └── auth_tag de 128 bits incluido al final del ciphertext
+  │
+  └─ 7. signature = Ed25519.sign( SHA-256(ciphertext_hex + canonical_json(header)) )
+         signer_id = SHA-256(signing_pub_key DER)[:32 hex]
+  │
+  ▼
+Escribe archivo.vault (JSON local):
+  {
+    "header":     { filename, recipients, version },
+    "nonce":      "<hex>",
+    "ciphertext": "<hex>",
+    "recipients": [ { recipient_id, encrypted_key }, ... ],
+    "signature":  "<hex>",   ← solo si se firmó
+    "signer_id":  "<hex>"    ← solo si se firmó
+  }
+```
+
+![Fujo de cifrado](../flujo_cifrado.png)
+
+
+---
+
+### Flujo de Recuperación (Descifrado)
+
+El destinatario recibe el `.vault` por cualquier canal externo y se ejecuta `python main.py descifrar`.
+
+```
+Usuario
+  │
+  ├─ Proporciona: archivo.vault, bob_private.keystore
+  │               [--firma-publica alice_signing_public.pem]
+  │
+  ▼
+CLI solicita contraseña maestra 
+  │
+  ▼
+decrypt_file_hybrid()
+  │
+  ├─ 1. Lee archivo.vault (JSON local)
+  │
+  ├─ 2. _validate_container()
+  │       Verifica campos requeridos: header, nonce, ciphertext, recipients
+  │       Verifica tipos. Rechaza si malformado. ← ANTES de cualquier cripto
+  │
+  ├─ 3. verify_signature()   ← ANTES de descifrar
+  │       Si el vault tiene firma y no se pasó --firma-publica → rechaza
+  │       Si se pasó --firma-publica:
+  │         expected_id = SHA-256(signing_pub_key DER)[:32]
+  │         hmac.compare_digest(expected_id, container["signer_id"])
+  │         Ed25519.verify(signature, SHA-256(ciphertext_hex + canonical_json(header)))
+  │         ❌ Si falla → error genérico, proceso detenido
+  │         ✅ Si pasa → continúa
+  │
+  ├─ 4. keys_manager.load_private_key(bob_private.keystore, password)
+  │       Argon2id(password, salt) → clave_derivada
+  │       PKCS8.decrypt(encrypted_key, clave_derivada) → RSAPrivKey (en memoria)
+  │       ❌ Si contraseña incorrecta → error genérico (no revela causa)
+  │
+  ├─ 5. my_id = SHA-256(RSAPrivKey.public_key() DER)[:32 hex]
+  │       Busca my_id en recipients (O(1), sin iterar con try/except)
+  │       ❌ Si no encontrado → error genérico
+  │
+  ├─ 6. file_key = RSA-OAEP-SHA256.decrypt(encrypted_key, RSAPrivKey)
+  │       ❌ Si falla → error genérico
+  │
+  ├─ 7. Reconstruye AAD = canonical_json(header)
+  │
+  └─ 8. plaintext = AES-GCM-256.decrypt(ciphertext, nonce, AAD)
+          ❌ Si InvalidTag → error genérico (fail-closed, no revela causa)
+  │
+  ▼
+Escribe archivo recuperado (local)
+```
+
+![Fujo de descifrado](../flujo_descifrado.png)
+
+
 
 ---
 
